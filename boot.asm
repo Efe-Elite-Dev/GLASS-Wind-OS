@@ -1,3 +1,5 @@
+bits 32
+
 MULTIBOOT_PAGE_ALIGN    equ 1 << 0
 MULTIBOOT_MEMORY_INFO   equ 1 << 1
 MULTIBOOT_VIDEO_MODE    equ 1 << 2
@@ -12,12 +14,14 @@ align 4
     dd MULTIBOOT_HEADER_FLAGS
     dd MULTIBOOT_CHECKSUM
     
+    ; Multiboot standart adres alanları (Grafik modu açıkken burası şarttır)
     dd 0
     dd 0
     dd 0
     dd 0
     dd 0
     
+    ; Grafik Modu Bilgileri (0 = Doğrusal Grafik Alanı)
     dd 0        
     dd 800      
     dd 600      
