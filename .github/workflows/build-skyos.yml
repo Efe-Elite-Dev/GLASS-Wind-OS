@@ -40,7 +40,7 @@ jobs:
         tag_name: v1.1.${{ github.run_number }}
         name: Wind OS Full AI-Core v1.1.${{ github.run_number }}
         body: |
-          🚀 Wind OS Full AI-Core Mermi Gibi Basıldı!
+          🚀 Wind OS - ISO Derlemesi Tamamen Düzeltildi!
         draft: false
         prerelease: false
         files: windos.iso
