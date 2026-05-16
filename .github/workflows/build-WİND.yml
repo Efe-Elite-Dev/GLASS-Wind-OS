@@ -1,0 +1,32 @@
+name: Build Wind OS (Sky OS Engine)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Sky OS Evrensel Derleme Araçlarını Kur
+      run: |
+        sudo apt-get update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq nasm gcc mtools xorriso grub-pc-bin grub-efi-amd64-bin grub-common
+
+    - name: Wind OS'u Derle ve ISO Bas
+      run: |
+        chmod +x build.sh
+        bash build.sh
+
+    - name: ISO'yu Actions'a Yükle
+      uses: actions/upload-artifact@v4
+      with:
+        name: windos-release
+        path: windos.iso
+        if-no-files-found: error
