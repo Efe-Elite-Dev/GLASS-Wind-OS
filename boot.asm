@@ -14,14 +14,14 @@ align 4
     dd MULTIBOOT_HEADER_FLAGS
     dd MULTIBOOT_CHECKSUM
     
-    ; Multiboot standart adres alanları (Grafik modu açıkken burası şarttır)
+    ; Multiboot Grafik Alanı Sabitleri (Zorunlu Boşluklar)
     dd 0
     dd 0
     dd 0
     dd 0
     dd 0
     
-    ; Grafik Modu Bilgileri (0 = Doğrusal Grafik Alanı)
+    ; Grafik Çözünürlüğü Ayarları (0 = Lineer Ekran Kartı Belleği)
     dd 0        
     dd 800      
     dd 600      
@@ -30,7 +30,7 @@ align 4
 section .bootstrap_stack, nobits
 align 16
 stack_bottom:
-    resb 16384  ; 16 KB temiz yığın alanı
+    resb 16384  ; 16 KB temiz yığın
 stack_top:
 
 section .text
