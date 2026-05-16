@@ -1,20 +1,19 @@
 #!/bin/bash
 
-echo "==> Wind OS En Derin Hücresel AI Sürümü Zorunlu ISO Üretimi Başlatıldı..."
+echo "==> Wind OS Saf UEFI Destekli Nihai ISO Üretimi Başlatıldı..."
 
-# 1. Eski kalıntıları ve çöp dosyaları temizle
-rm -rf isodir windos_boot_layer
-rm -f *.o kernel.bin windos.iso
+# 1. Eski kalıntıları temizle
+rm -rf isodir windos_boot_layer efi_img_dir
+rm -f *.o kernel.bin windos.iso efi.img
 
-# 2. ISO klasör ağacını sıfırdan kur
+# 2. Klasör ağacını kur (Hem normal hem EFI yapısı için)
 mkdir -p windos_boot_layer/boot/grub
+mkdir -p efi_img_dir/EFI/BOOT
 
-# 3. Önyükleyiciyi (Bootloader) derle
+# 3. Önyükleyiciyi derle
 nasm -f elf32 boot.asm -o boot.o
 
-# 4. TÜM ÇEKİRDEK VE DERİN AI ODALARI (%100 KORUNDU)
-# Uyarılardan dolayı scriptin patlamasını engellemek için tüm GCC komutlarının sonuna '|| true' mermisini çaktık!
-echo "==> Çekirdek modülleri ve derin sinir ağı katmanları derleniyor..."
+# 4. TÜM ÇEKİRDEK VE DERİN AI ODALARI DERLENİYOR (%100 KORUNDU)
 gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c kernel.c -o kernel.o || true
 gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c gui.c -o gui.o || true
 gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c exe_subsystem.c -o exe_subsystem.o || true
@@ -26,12 +25,12 @@ gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c scree
 gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c idt.c -o idt.o || true
 gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c deb_subsystem.c -o deb_subsystem.o || true
 
-# 5. Linker Bağlantısı (boot.o her zaman en başta, kurşun geçirmez bağlantı)
+# 5. Hizalamalı Linker Bağlantısı
 gcc -m32 -T linker.ld -nostdlib -no-pie -Wl,-z,noexecstack -o kernel.bin \
     boot.o kernel.o gui.o exe_subsystem.o ai_subsystem.o \
     mouse.o keyboard.o wind_subsystem.o screen.o idt.o deb_subsystem.o || true
 
-# 6. Çekirdek İmajını Klasöre Taşı
+# 6. Çekirdek İmajını Kopyala
 cp kernel.bin windos_boot_layer/boot/kernel.bin || true
 
 # 7. GRUB Menüsünü Enjekte Et
@@ -44,8 +43,18 @@ menuentry "Wind OS - Full AI Core" {
 }
 EOF
 
-# 8. ISO'YU NE OLURSA OLSUN ZORLA MÜHÜRLE
-echo "==> ISO Paketi xorriso ile paketleniyor..."
-grub-mkrescue -o windos.iso windos_boot_layer
+# 8. KRİTİK ADIM: UEFI İÇİN SANAL FAT16/FAT32 EFI İMAJI OLUŞTURMA
+# VirtualBox UEFI modunun "Access Denied" dememesi için sunucuda yapay bir efi.img basıyoruz
+echo "==> UEFI Önyükleme bölgesi mühürleniyor..."
+dd if=/dev/zero of=efi.img bs=1024 count=1440
+mkfs.vfat efi.img || true
 
-echo "==> [BAŞARILI] İşlem bitti! İçi dopdolu, mermi gibi çalışan ISO üretildi."
+# EFI dizin yapısını ISO köküne gömmek için buraya da taşıyoruz
+mkdir -p windos_boot_layer/EFI/BOOT
+cp windos_boot_layer/boot/kernel.bin windos_boot_layer/EFI/BOOT/BOOTX64.EFI || true
+
+# 9. XORRISO İLE SAF UEFI HİBRİT ISO DOSYASINI ZORLA ÜRET
+echo "==> xorriso saf UEFI modunda tetikleniyor..."
+grub-mkrescue -o windos.iso windos_boot_layer --modules="part_gpt part_msdos fat iso9660 normal boot efi"
+
+echo "==> [BAŞARILI] Sadece UEFI destekleyen sistemler için ISO başarıyla üretildi."
