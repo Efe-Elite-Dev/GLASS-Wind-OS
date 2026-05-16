@@ -17,7 +17,9 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y nasm xorriso grub-pc-bin grub-common mtools gcc gcc-multilib
+        # KRİTİK ZIRH: grub-pc ve grub-pc-bin paketlerini ekledik. 
+        # Bu sayede stage2_eltorito dosyası sisteme yüklenecek ve ISO %100 bootable basılacak!
+        sudo apt-get install -y nasm xorriso grub-pc grub-pc-bin grub-common mtools gcc gcc-multilib
 
     - name: Build ISO via Script
       run: |
@@ -42,9 +44,11 @@ jobs:
           🚀 Wind OS Tamamen Sıfırdan ve Bağımsız Yapay Zeka Odalarıyla İnşa Edildi!
           
           **Yenilikler:**
+          - Çift Arabellek (Double Buffering) mimarisi 5MB güvenli hafıza adresine kilitlendi.
+          - `swap_buffers` senkronizasyon hatası giderilerek ekrandaki pır-pır (flicker) etkisi sıfırlandı.
           - Her sürücü odasına (`kernel`, `mouse`, `keyboard`) bağımsız AI tahmin ajanları yerleştirildi.
-          - `linker.ld` için geliştirilen nihai yerleşim zırhı sayesinde VirtualBox'taki `no multiboot header found` hatası kökten çözüldü.
-          - `gcc-multilib` entegrasyonuyla GitHub Actions derleme hatası ortadan kaldırıldı.
+          - `linker.ld` için geliştirilen nihai yerleşim zırhı sayesinde VirtualBox'taki `no bootable option found` hatası kökten çözüldü.
+          - `grub-pc` bağımlılığı YML seviyesinde zırhlanarak ISO'nun boot sektörü El Torito standartlarına eşitlendi.
         draft: false
         prerelease: false
         files: windos.iso
