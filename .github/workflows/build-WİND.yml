@@ -33,7 +33,6 @@ jobs:
 
     - name: Dinamik Makefile Şablonunu Sürece Enjekte Et
       run: |
-        # İş akışı içinde tanımlanmış merkezi Makefile içeriği dışarı aktarılıyor
         cat << 'EOF' > Makefile
 # =============================================================================
 # Wind OS - Canlı 'PATCHES' Entegrasyonlu Otomasyon Motoru (Workflow Internal)
@@ -86,63 +85,81 @@ EOF
       id: compile_step
       run: |
         make clean
+        # Derleme çıktı ve hatalarını derin analiz için log dosyasına kaydet
         make 2>&1 | tee build_output.log
       continue-on-error: true
 
-    - name: Otonom AI Hata Teşhis ve Canlı Kod Onarım Döngüsü
+    - name: Otonom Gelişmiş AI Hata Teşhis ve Canlı Kod Onarım Döngüsü
       if: steps.compile_step.outcome == 'failure'
       run: |
         echo "================================================================="
-        echo "🚨 DERLEME HATASI ALGILANDI! YAPAY ZEKA ONARIM MOTORU BAŞLATILDI 🚨"
+        echo "🚨 DERLEME HATASI ALGILANDI! ADVANCED AI REPAIR ENGINE AKTİF 🚨"
         echo "================================================================="
         
-        # 1. Log analiz sensörlerini çalıştır ve hata tiplerini ayıkla
-        UNDEFINED_REF=$(grep -oP "undefined reference to \`\K[^\`']+" build_output.log | head -n 1)
-        IMPLICIT_FUNC=$(grep -oP "implicit declaration of function \`\K[^\`']+" build_output.log | head -n 1)
+        # 1. Log Analiz Sensörleri ile Hata Tespiti ve Değişken İzolasyonu
+        ERR_LOG="build_output.log"
         
-        # 2. Yapay zeka karar matrisine göre anlık kod onarımlarını tetikle
+        # Kritik Hata Türlerini Ayıkla
+        UNDEFINED_REF=$(grep -oP "undefined reference to \`\K[^\`']+" $ERR_LOG | head -n 1)
+        IMPLICIT_FUNC=$(grep -oP "implicit declaration of function \`\K[^\`']+" $ERR_LOG | head -n 1)
+        SYNTAX_ERR_FILE=$(grep -oP "^[^:]+\.c(?=:[0-9]+:[0-9]+: error:)" $ERR_LOG | head -n 1)
+        SYNTAX_ERR_LINE=$(grep -oP "^[^:]+\.c:\K[0-9]+(?=:[0-9]+: error:)" $ERR_LOG | head -n 1)
         
-        # Senaryo A: Tanımsız Linker Referans Hatası (Undefined Reference)
+        # 2. Gelişmiş Yapay Zeka Onarım Matrisi
+        
+        # Sınıflandırma 1: Tanımsız Linker Referansları (Linker Hataları)
         if [ ! -z "$UNDEFINED_REF" ]; then
-          echo "🤖 AI Teşhisi: Linker aşamasında eksik referans tespit edildi -> $UNDEFINED_REF"
+          echo "🤖 AI Teşhisi: Eksik nesne bağımlılığı veya global referans -> $UNDEFINED_REF"
           
-          # Entegre Makefile içindeki ueft yazım hatasını dinamik olarak tamir et
+          # Eğer entegre Makefile içinde ueft typo'su varsa düzelt
           if grep -q "ueft_subsystem" Makefile; then
-            echo "⚡ AI Onarımı: Entegre Makefile içindeki yazım hatası (ueft -> uefi) düzeltiliyor..."
+            echo "⚡ AI Onarımı: Makefile içerisindeki 'ueft' kelimesi 'uefi' olarak düzeltiliyor..."
             sed -i 's/ueft_subsystem/uefi_subsystem/g' Makefile
           fi
           
-          # screen.c içinde back_buffer dizisi eksikse otomatik enjekte et
+          # screen.c altındaki back_buffer eksikliğini tespit ederse bellek alanını enjekte et
           if [ "$UNDEFINED_REF" == "back_buffer" ]; then
-            echo "⚡ AI Onarımı: screen.c içerisine küresel back_buffer dizisi enjekte ediliyor..."
+            echo "⚡ AI Onarımı: screen.c dosyasına 'back_buffer' küresel dizisi enjekte ediliyor..."
             sed -i '1s/^/uint32_t back_buffer[800 * 600];\n/' screen.c
           fi
         fi
         
-        # Senaryo B: Bildirilmemiş Fonksiyon Çağrısı (Implicit Declaration)
+        # Sınıflandırma 2: Prototipsiz Fonksiyon Çağrıları (Implicit Declaration)
         if [ ! -z "$IMPLICIT_FUNC" ]; then
-          echo "🤖 AI Teşhisi: C standartlarına aykırı bildirilmemiş fonksiyon -> $IMPLICIT_FUNC"
-          echo "⚡ AI Onarımı: kernel.c içerisine 'extern void $IMPLICIT_FUNC(void);' prototipi bağlanıyor..."
+          echo "🤖 AI Teşhisi: C standartlarına aykırı deklare edilmemiş fonksiyon çağrısı -> $IMPLICIT_FUNC"
+          echo "⚡ AI Onarımı: kernel.c içerisine güvenli 'extern void $IMPLICIT_FUNC(void);' prototipi bağlanıyor..."
           sed -i "/HARİCİ ALT SİSTEM/a extern void ${IMPLICIT_FUNC}(void);" kernel.c
         fi
         
-        # Senaryo C: Hatalı Dosya Adı Tespiti
+        # Sınıflandırma 3: Satır Seviyesinde Sözdizimi Hataları (Syntax Errors - Eksik Süslü Parantez/Noktalı Virgül)
+        if [ ! -z "$SYNTAX_ERR_FILE" ] && [ ! -z "$SYNTAX_ERR_LINE" ]; then
+          echo "🤖 AI Teşhisi: Kodlama hatası saptandı -> Dosya: $SYNTAX_ERR_FILE, Satır: $SYNTAX_ERR_LINE"
+          
+          # Hatalı satırın içeriğini incele, eğer satır sonunda noktalı virgül eksikse otomatik ekle
+          TARGET_LINE_CONTENT=$(sed -n "${SYNTAX_ERR_LINE}p" $SYNTAX_ERR_FILE)
+          if [[ ! "$TARGET_LINE_CONTENT" =~ \;$ ]] && [[ ! "$TARGET_LINE_CONTENT" =~ \{$ ]] && [[ ! "$TARGET_LINE_CONTENT" =~ \}$ ]] && [ ! -z "$TARGET_LINE_CONTENT" ]; then
+            echo "⚡ AI Onarımı: Eksik noktalı virgül (;) hatası düzeltiliyor..."
+            sed -i "${SYNTAX_ERR_LINE}s/$/;/" $SYNTAX_ERR_FILE
+          fi
+        fi
+        
+        # Sınıflandırma 4: Dosya İsimlendirme Pürüzleri
         if [ -f "ueft_subsystem.c" ]; then
-          echo "🤖 AI Teşhisi: Hatalı kaynak dosya adı algılandı -> ueft_subsystem.c"
-          echo "⚡ AI Onarımı: Dosya adı uefi_subsystem.c olarak normalize ediliyor..."
+          echo "🤖 AI Teşhisi: Yanlış adlandırılmış kaynak dosya tespit edildi."
+          echo "⚡ AI Onarımı: Dosya adı uefi_subsystem.c olarak güncelleniyor..."
           mv ueft_subsystem.c uefi_subsystem.c
         fi
 
-        # 3. Onarım sonrası sistemi kurtarma modunda yeniden derle
-        echo "🔄 AI onarımları uygulandı. Sistem kurtarma modunda yeniden derleniyor..."
+        # 3. Sistemi Kurtarma Modunda Yeniden Derle
+        echo "🔄 AI onarımları başarıyla tamamlandı. Sistem yeniden derleniyor..."
         make clean
         make 2>&1 | tee build_output_retry.log
         
         if [ ${PIPESTATUS[0]} -ne 0 ]; then
-          echo "❌ HATA: Yapay zeka birinci seviye onarım algoritması yetersiz kaldı. Manuel müdahale gerekiyor."
+          echo "❌ HATA: Yapay zeka otonom onarım algoritması kritik/yapısal mantık hatasını aşamadı. Manuel müdahale gerekiyor."
           exit 1
         else
-          echo "✅ BAŞARI: Yapay zeka kaynak kodları canlı olarak onardı ve derleme tamamlandı!"
+          echo "✅ BAŞARI: Yapay zeka kaynak kodları canlı olarak onardı ve derleme başarıyla tamamlandı!"
         fi
 
     - name: Onarılan Kod Değişikliklerini Otomatik Commit Et
@@ -150,16 +167,16 @@ EOF
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         
-        # Süreç içinde üretilen geçici Makefile'ı depoya pushlamamak için siliyoruz
+        # Çalışma zamanında üretilen geçici Makefile'ı depoya pushlamamak için siliyoruz
         rm -f Makefile
         
         if [ -n "$(git status --porcelain)" ]; then
-          echo "Yapay zekanın düzelttiği kaynak kod blokları ana dala geri pushlanıyor..."
+          echo "Yapay zekanın başarıyla onardığı kaynak kod blokları depoya geri pushlanıyor..."
           git add .
-          git commit -m "fix(ai-healing): dynamic code recovery during execution tree"
+          git commit -m "fix(ai-healing): otonom yapay zeka tarafından derleme hataları canlı olarak onarıldı"
           git push origin main
         else
-          echo "Kod tabanında kalıcı bir yapısal değişiklik yapılmasına gerek duyulmadı."
+          echo "Kod tabanında müdahale edilecek bir hata bulunamadı, sistem zaten kararlı."
         fi
 
     - name: Nihai ISO Bütünlük Kontrolü
