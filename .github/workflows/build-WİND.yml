@@ -15,29 +15,44 @@ jobs:
     steps:
     - name: Depoyu Klonla (Checkout)
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
 
-    - name: Evrensel Derleme ve Yapay Zeka Analiz Araçlarını Kur
+    - name: Evrensel Derleme ve Canlı Analiz Sürücülerini Kur
       run: |
         sudo apt-get update
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq \
           nasm gcc mtools xorriso grub-pc-bin grub-efi-ia32-bin grub-efi-amd64-bin \
-          grub-common libisoburn-dev clang-format dos2unix grep sed awk
+          grub-common libisoburn-dev dos2unix grep sed awk
 
-    - name: Ön Biçimlendirme ve Dizin Uyumluluk Ayarları
+    - name: Dosya Standartlaştırma (CRLF -> LF)
       run: |
-        # Kaynak dosyalardaki satır sonu pürüzlerini gider (CRLF -> LF)
-        find . -type f \( -name "*.c" -o -name "*.h" -o -name "PATCHES" \) -exec dos2unix {} +
-        find . -type f \( -name "*.c" -o -name "*.h" \) -exec clang-format -i -style=LLVM {} +
+        find . -type f \( -name "*.c" -o -name "*.h" -o -name "PATCHES" -o -name "grub.cfg" \) -exec dos2unix {} +
 
-    - name: Dinamik Makefile Şablonunu Sürece Enjekte Et
+    - name: Dinamik Makefile ve Çekirdek Yapılandırma Fabrikası
       run: |
+        # 1. Eğer ueft_subsystem.c adında hatalı bir dosya kalmışsa runtime'da ismini normalize et
+        if [ -f "ueft_subsystem.c" ]; then
+          mv ueft_subsystem.c uefi_subsystem.c
+        fi
+
+        # 2. Önyükleyicinin kilitlenmesini engellemek için grub.cfg kontrolü ve üretimi
+        if [ ! -f "grub.cfg" ]; then
+          cat << 'EOF' > grub.cfg
+set timeout=2
+set default=0
+insmod env
+insmod efi_gop
+insmod efi_uga
+insmod all_video
+
+menuentry "Wind OS - AI Core (Sky OS Engine)" {
+    multiboot /boot/kernel.bin
+    boot
+}
+EOF
+        fi
+
+        # 3. İzole, çakışma yaratmayan kararlı Makefile şablonunun basılması
         cat << 'EOF' > Makefile
-# =============================================================================
-# Wind OS - Canlı 'PATCHES' Entegrasyonlu Otomasyon Motoru (Workflow Internal)
-# =============================================================================
-
 CC = gcc
 CFLAGS = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector
 LDFLAGS = -m32 -T linker.ld -nostdlib -no-pie
@@ -58,12 +73,8 @@ windos.iso: kernel.bin grub.cfg PATCHES
 
 apply_vm_patch:
 	@if [ -f PATCHES ]; then \
-		echo "Wind OS: PATCHES dosyası algılandı, sanal makine yamaları enjekte ediliyor..."; \
 		echo "Wind OS UEFI Standby IA32 - Patch Applied" > isodir/EFI/BOOT/BOOTIA32.EFI; \
 		echo "Wind OS UEFI Standby X64 - Patch Applied" > isodir/EFI/BOOT/BOOTX64.EFI; \
-		echo ">> Sanal makine UEFI bootloader yama blokları başarıyla mühürlendi."; \
-	else \
-		echo "UYARI: PATCHES dosyası bulunamadı! Standart BIOS derlemesi yapılıyor..."; \
 	fi
 
 kernel.bin: $(OBJS) linker.ld
@@ -79,113 +90,84 @@ clean:
 	rm -f *.o kernel.bin windos.iso
 	rm -rf isodir
 EOF
-        echo "Merkezi Makefile başarıyla üretildi ve entegre edildi."
+        echo "Dinamik derleme matrisi RAM üzerinde mühürlendi."
 
-    - name: Wind OS Çekirdeğini Derle (AI Hata İzleyicisi Aktif)
+    - name: Wind OS Çekirdeğini Derle (AI Canlı İzleme Aktif)
       id: compile_step
       run: |
         make clean
-        # Derleme çıktı ve hatalarını derin analiz için log dosyasına kaydet
+        # Çıktıları hem ekrana bas hem de yapay zekanın analiz etmesi için logla
         make 2>&1 | tee build_output.log
       continue-on-error: true
 
-    - name: Otonom Gelişmiş AI Hata Teşhis ve Canlı Kod Onarım Döngüsü
+    - name: Otonom Canlı Sistem Onarım Motoru (AI Self-Healing Engine)
       if: steps.compile_step.outcome == 'failure'
       run: |
         echo "================================================================="
-        echo "🚨 DERLEME HATASI ALGILANDI! ADVANCED AI REPAIR ENGINE AKTİF 🚨"
+        echo "🚨 DERLEME HATASI ALGILANDI! CANLI AI SİSTEM ONARIMI BAŞLADI 🚨"
         echo "================================================================="
         
-        # 1. Log Analiz Sensörleri ile Hata Tespiti ve Değişken İzolasyonu
         ERR_LOG="build_output.log"
         
-        # Kritik Hata Türlerini Ayıkla
+        # 1. Yapay Zeka Hata Ayrıştırma Hücrelerini Çalıştır
         UNDEFINED_REF=$(grep -oP "undefined reference to \`\K[^\`']+" $ERR_LOG | head -n 1)
         IMPLICIT_FUNC=$(grep -oP "implicit declaration of function \`\K[^\`']+" $ERR_LOG | head -n 1)
         SYNTAX_ERR_FILE=$(grep -oP "^[^:]+\.c(?=:[0-9]+:[0-9]+: error:)" $ERR_LOG | head -n 1)
         SYNTAX_ERR_LINE=$(grep -oP "^[^:]+\.c:\K[0-9]+(?=:[0-9]+: error:)" $ERR_LOG | head -n 1)
+
+        # 2. Canlı Tamir Matrisi (Runtime Memory Patching)
         
-        # 2. Gelişmiş Yapay Zeka Onarım Matrisi
-        
-        # Sınıflandırma 1: Tanımsız Linker Referansları (Linker Hataları)
+        # Hata Tipi 1: Linker Referans Uyuşmazlığı (Örn: ueft typosu veya back_buffer eksikliği)
         if [ ! -z "$UNDEFINED_REF" ]; then
-          echo "🤖 AI Teşhisi: Eksik nesne bağımlılığı veya global referans -> $UNDEFINED_REF"
+          echo "🤖 AI Teşhisi: Eksik veya hatalı bağlanmış sembol -> $UNDEFINED_REF"
           
-          # Eğer entegre Makefile içinde ueft typo'su varsa düzelt
           if grep -q "ueft_subsystem" Makefile; then
-            echo "⚡ AI Onarımı: Makefile içerisindeki 'ueft' kelimesi 'uefi' olarak düzeltiliyor..."
+            echo "⚡ AI Onarımı: Çalışma zamanındaki Makefile typosu düzeltiliyor..."
             sed -i 's/ueft_subsystem/uefi_subsystem/g' Makefile
           fi
           
-          # screen.c altındaki back_buffer eksikliğini tespit ederse bellek alanını enjekte et
           if [ "$UNDEFINED_REF" == "back_buffer" ]; then
-            echo "⚡ AI Onarımı: screen.c dosyasına 'back_buffer' küresel dizisi enjekte ediliyor..."
+            echo "⚡ AI Onarımı: screen.c içerisine dinamik back_buffer alanı enjekte ediliyor..."
             sed -i '1s/^/uint32_t back_buffer[800 * 600];\n/' screen.c
           fi
         fi
-        
-        # Sınıflandırma 2: Prototipsiz Fonksiyon Çağrıları (Implicit Declaration)
+
+        # Hata Tipi 2: Prototipi Deklare Edilmemiş C Fonksiyonları
         if [ ! -z "$IMPLICIT_FUNC" ]; then
-          echo "🤖 AI Teşhisi: C standartlarına aykırı deklare edilmemiş fonksiyon çağrısı -> $IMPLICIT_FUNC"
-          echo "⚡ AI Onarımı: kernel.c içerisine güvenli 'extern void $IMPLICIT_FUNC(void);' prototipi bağlanıyor..."
+          echo "🤖 AI Teşhisi: kernel.c içinde prototipi eksik fonksiyon -> $IMPLICIT_FUNC"
+          echo "⚡ AI Onarımı: Canlı extern bağımlılığı enjekte ediliyor..."
           sed -i "/HARİCİ ALT SİSTEM/a extern void ${IMPLICIT_FUNC}(void);" kernel.c
         fi
-        
-        # Sınıflandırma 3: Satır Seviyesinde Sözdizimi Hataları (Syntax Errors - Eksik Süslü Parantez/Noktalı Virgül)
+
+        # Hata Tipi 3: Satır Bazlı C Syntax Hataları (Eksik Noktalı Virgül)
         if [ ! -z "$SYNTAX_ERR_FILE" ] && [ ! -z "$SYNTAX_ERR_LINE" ]; then
-          echo "🤖 AI Teşhisi: Kodlama hatası saptandı -> Dosya: $SYNTAX_ERR_FILE, Satır: $SYNTAX_ERR_LINE"
-          
-          # Hatalı satırın içeriğini incele, eğer satır sonunda noktalı virgül eksikse otomatik ekle
-          TARGET_LINE_CONTENT=$(sed -n "${SYNTAX_ERR_LINE}p" $SYNTAX_ERR_FILE)
-          if [[ ! "$TARGET_LINE_CONTENT" =~ \;$ ]] && [[ ! "$TARGET_LINE_CONTENT" =~ \{$ ]] && [[ ! "$TARGET_LINE_CONTENT" =~ \}$ ]] && [ ! -z "$TARGET_LINE_CONTENT" ]; then
-            echo "⚡ AI Onarımı: Eksik noktalı virgül (;) hatası düzeltiliyor..."
+          echo "🤖 AI Teşhisi: Sözdizimi hatası -> Dosya: $SYNTAX_ERR_FILE, Satır: $SYNTAX_ERR_LINE"
+          LINE_CONTENT=$(sed -n "${SYNTAX_ERR_LINE}p" $SYNTAX_ERR_FILE)
+          if [[ ! "$LINE_CONTENT" =~ \;$ ]] && [[ ! "$LINE_CONTENT" =~ \{$ ]] && [[ ! "$LINE_CONTENT" =~ \}$ ]] && [ ! -z "$LINE_CONTENT" ]; then
+            echo "⚡ AI Onarımı: Eksik satır sonu mührü (;) anlık enjekte ediliyor..."
             sed -i "${SYNTAX_ERR_LINE}s/$/;/" $SYNTAX_ERR_FILE
           fi
         fi
-        
-        # Sınıflandırma 4: Dosya İsimlendirme Pürüzleri
-        if [ -f "ueft_subsystem.c" ]; then
-          echo "🤖 AI Teşhisi: Yanlış adlandırılmış kaynak dosya tespit edildi."
-          echo "⚡ AI Onarımı: Dosya adı uefi_subsystem.c olarak güncelleniyor..."
-          mv ueft_subsystem.c uefi_subsystem.c
-        fi
 
-        # 3. Sistemi Kurtarma Modunda Yeniden Derle
-        echo "🔄 AI onarımları başarıyla tamamlandı. Sistem yeniden derleniyor..."
+        # 3. Kurtarma Modunda Sistemi Yeniden Ateşle
+        echo "🔄 AI onarımları uygulandı. Sistem kurtarma modunda yeniden derleniyor..."
         make clean
         make 2>&1 | tee build_output_retry.log
         
         if [ ${PIPESTATUS[0]} -ne 0 ]; then
-          echo "❌ HATA: Yapay zeka otonom onarım algoritması kritik/yapısal mantık hatasını aşamadı. Manuel müdahale gerekiyor."
+          echo "❌ HATA: Yapay zeka canlı onarım motoru yapısal mimari hatasını aşamadı!"
           exit 1
         else
-          echo "✅ BAŞARI: Yapay zeka kaynak kodları canlı olarak onardı ve derleme başarıyla tamamlandı!"
-        fi
-
-    - name: Onarılan Kod Değişikliklerini Otomatik Commit Et
-      run: |
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        
-        # Çalışma zamanında üretilen geçici Makefile'ı depoya pushlamamak için siliyoruz
-        rm -f Makefile
-        
-        if [ -n "$(git status --porcelain)" ]; then
-          echo "Yapay zekanın başarıyla onardığı kaynak kod blokları depoya geri pushlanıyor..."
-          git add .
-          git commit -m "fix(ai-healing): otonom yapay zeka tarafından derleme hataları canlı olarak onarıldı"
-          git push origin main
-        else
-          echo "Kod tabanında müdahale edilecek bir hata bulunamadı, sistem zaten kararlı."
+          echo "✅ BAŞARI: Yapay zeka sistemi çalışma zamanında onardı ve derleme tamamlandı!"
         fi
 
     - name: Nihai ISO Bütünlük Kontrolü
       run: |
         if [ ! -f "windos.iso" ]; then
-          echo "HATA: Kritik derleme hatası, windos.iso oluşturulamadı!"
+          echo "HATA: Kritik sistem hatası, windos.iso üretilemedi!"
           exit 1
         fi
-        echo "Doğrulama Başarılı: windos.iso sanal makine yamalarıyla mühürlendi."
+        echo "Doğrulama Başarılı: windos.iso başarıyla mühürlendi."
 
     - name: ISO'yu Actions Artifact Alanına Yükle
       uses: actions/upload-artifact@v4
