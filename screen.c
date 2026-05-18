@@ -1,12 +1,11 @@
 #include "screen.h"
 
-// Küresel ekran değişkenleri
 uint8_t* vbe_vram = (uint8_t*)0xA0000;
 uint32_t vbe_pitch = 320;
 
 static uint8_t screen_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
 
-// TÜM SİSTEMLERİN ARADIĞI KÜRESEL SAF PİKSEL SÜRÜCÜSÜ
+// Tüm alt sistemlerin (gui, exe, setup) ortaklaşa çağıracağı saf piksel fonksiyonu
 void draw_pixel_pure(int x, int y, uint8_t color) {
     if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT) {
         vbe_vram[y * vbe_pitch + x] = color;
