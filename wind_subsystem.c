@@ -1,28 +1,40 @@
-#include "wind_subsystem.h"
-#include "ai_subsystem.h"
+import customtkinter as ctk
+from sky_setup_ui import SkyCoreSetup
 
-/* Rüzgar Alt Sistemi Global Durum Değişkenleri */
-static int system_initialized = 0;
-static uint32_t system_uptime_ticks = 0;
+class SkyKernelCore(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        
+        self.title("Sky Core OS v1.5 [vortex-kernel] - Active")
+        self.geometry("1024x768")
+        self.resizable(False, False)
+        
+        self.kernel_frame = ctk.CTkFrame(self, fg_color="#0f0a1c")
+        self.kernel_frame.pack(fill="both", expand=True)
+        
+        self.load_main_os_interface()
 
-/**
- * @brief Rüzgar Alt Sistemini (Wind Subsystem) ilk fırlatan ana motor.
- */
-void init_wind_subsystem(void) {
-  system_initialized = 1;
-  system_uptime_ticks = 0;
-}
+    def load_main_os_interface(self):
+        status_lbl = ctk.CTkLabel(
+            self.kernel_frame, 
+            text="🌪️ SKY CORE OS [ vortex-kernel v1.5 ] AKTIF\nSistem başarıyla ana belleğe yüklendi.", 
+            font=("Arial", 22, "bold"), 
+            text_color="#00d2d3"
+        )
+        status_lbl.pack(pady=60)
+        
+        terminal_view = ctk.CTkTextBox(self.kernel_frame, width=850, height=450, fg_color="black", text_color="#1dd1a1", font=("Consolas", 13))
+        terminal_view.pack(pady=10)
+        terminal_view.insert("0.0", "sky_core@vortex-kernel:~$ core_init --status SUCCESS\nsky_core@vortex-kernel:~$ Sihirbaz tamamlandı, ana döngü serbest bırakıldı.\nsky_core@vortex-kernel:~$ kernel_status: ONLINE\nsky_core@vortex-kernel:~$ ")
 
-/**
- * @brief Alt sistemin kalbini vuran, her PIT kesmesinde tetiklenen rutin döngü.
- */
-void wind_subsystem_tick(void) {
-  if (!system_initialized)
-    return;
-  system_uptime_ticks++;
-}
+def run_main_system():
+    main_os = SkyKernelCore()
+    main_os.mainloop()
 
-/**
- * @brief Rüzgar alt sisteminin mevcut çalışma zamanı tik değerini döner.
- */
-uint32_t get_wind_subsystem_uptime(void) { return system_uptime_ticks; }
+if __name__ == "__main__":
+    # Önce sihirbazı çalıştır, kapandığı an kod alt satırdaki run_main_system'a akacak
+    wizard = SkyCoreSetup()
+    wizard.mainloop()
+    
+    # Döngü kırıldı, doğrudan çekirdeğe uçur:
+    run_main_system()
