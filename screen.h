@@ -9,7 +9,7 @@
 extern uint8_t* vbe_vram;
 extern uint32_t vbe_pitch;
 
-// Küresel piksel fonksiyonu prototipi
+// Linker hatalarını bitiren o meşhur saf piksel fonksiyonu bildirimi
 void draw_pixel_pure(int x, int y, uint8_t color);
 
 void screen_init(void);
