@@ -12,21 +12,18 @@ echo "[1] Çekirdek önyükleme mekanizması derleniyor (boot.asm)..."
 nasm -f elf32 boot.asm -o boot.o
 
 echo "[2] Çekirdek ve tüm alt sistemler derleniyor..."
-# Var olan tüm C dosyalarını otomatik veya manuel derle
-gcc -m32 -c kernel.c -o kernel.o -std=gnu99 -ffreestanding -O2 -Wall -Wextra
-gcc -m32 -c screen.c -o screen.o -std=gnu99 -ffreestanding -O2 -Wall -Wextra || echo "[-] screen.c bulunamadı veya derlenemedi, geçiliyor..."
-
-# Eğer setup, gui gibi ek alt sistem dosyaların varsa buraya ekleyebilirsin.
-# Şimdilik hata vermemesi için eğer yoksa boş objeler oluşturulmasını engellemek adına 
-# linker'a sadece elimizdeki kesin olan nesne dosyalarını vereceğiz.
+# Klasördeki tüm .c dosyalarını tek tek döngüyle 32-bit ELF nesne dosyasına çeviriyoruz
+for c_file in *.c; do
+    if [ -f "$c_file" ]; then
+        obj_file="${c_file%.c}.o"
+        echo "    -> $c_file derleniyor..."
+        gcc -m32 -c "$c_file" -o "$obj_file" -std=gnu99 -ffreestanding -O2 -Wall -Wextra
+    fi
+done
 
 echo "[3] Tüm nesne dosyaları linker.ld şablonuna göre birleştiriliyor..."
-# Sadece mevcut nesne dosyalarını bağlayalım. kernel.o zaten stub'ları içeriyor.
-if [ -f screen.o ]; then
-    ld -m elf_i386 -T linker.ld -o kernel.bin boot.o kernel.o screen.o --no-warn-rwx-segments
-else
-    ld -m elf_i386 -T linker.ld -o kernel.bin boot.o kernel.o --no-warn-rwx-segments
-fi
+# boot.o ve klasörde derlenmiş ne kadar .o dosyası varsa hepsini linker'a gönderiyoruz
+ld -m elf_i386 -T linker.ld -o kernel.bin boot.o *.o --no-warn-rwx-segments
 
 echo "[4] Boot edilebilir ISO imajı paketleniyor..."
 # GRUB standartlarına uygun klasör yapısını kökten tertemiz inşa ediyoruz
@@ -46,9 +43,7 @@ menuentry "Sky Core OS / Wind OS" {
 }
 EOF
 
-# xorriso hatasını ve GRUB2 "image too small" uyuşmazlığını aşmak için 
-# standart grub-mkrescue komutunu doğrudan çağırıyoruz. 
-# Bu komut arka planda xorriso'yu gerekli tüm GRUB modülleriyle doğru şekilde besler.
+# xorriso ve GRUB2 uyuşmazlığını aşmak için resmi kurtarma komutunu tetikliyoruz
 grub-mkrescue -o os_image.iso iso_root
 
 echo "======================================================================"
