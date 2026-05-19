@@ -1,4 +1,4 @@
-name: Build-System
+name: Sky-Core-OS Auto-Build-v1.5
 
 on: [push]
 
@@ -6,12 +6,26 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Compile
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Install Compilers
+        run: sudo apt-get update && sudo apt-get install -y nasm gcc-multilib
+
+      - name: Compile and Link Complete OS
         run: |
-          sudo apt-get install -y nasm gcc-multilib
+          # 1. Asm kaynaklarını derle
           nasm -f elf32 boot.asm -o boot.o
-          # Tüm C dosyalarını derle
+          
+          # 2. Mevcut tüm C kaynaklarını çakışmasız derle
           gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c *.c
-          # Hepsini kernel.bin'de birleştir
+          
+          # 3. Bağla ve tek bir dosya haline getir
           ld -m elf_i386 -T linker.ld -o kernel.bin *.o
+
+      - name: Generate Direct Output Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: kernel.bin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
