@@ -1,9 +1,14 @@
 #ifndef SETUP_UI_H
 #define SETUP_UI_H
 
+// 'bool' için gerekli tanımlama
+typedef int bool;
+#define true 1
+#define false 0
+
 typedef struct {
     char username[64];
-    int selected_region; // 0: Türkiye, 1: Diğer
+    int selected_region;
     bool wifi_enabled;
 } SetupData;
 
