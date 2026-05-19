@@ -35,7 +35,6 @@ volatile OS_UI_STATE current_os_state = STATE_WELCOME;
 #define COLOR_LIGHT_GRAY     0xFFD0D0D0  
 #define COLOR_ACTIVE_BLUE    0xFF2575FC  // Buton Aktif Mavisi
 #define COLOR_MAP_BG         0xFF3A3A5E  // Harita Paneli Arka Planı
-#define COLOR_MAP_LAND       0xFF8DA399  // Türkiye Haritası Kara Rengi
 #define COLOR_TEXT_DARK      0xFF222222  
 #define COLOR_TEXT_LIGHT     0xFFF5F5F5  
 #define COLOR_WIDGET_BG      0xAA211C38  // Transparan Widget Grisi/Moru
@@ -144,6 +143,7 @@ void draw_vertical_gradient(uint32_t color_top, uint32_t color_bottom) {
 
 void draw_char_basic(int x, int y, char c, uint32_t color) {
     static const uint8_t font_matrix[8] = {0x3C, 0x66, 0x66, 0x7C, 0x66, 0x66, 0x66, 0x00};
+    (void)c; // Kullanılmayan parametre uyarısını susturmak için
     for (int r = 0; r < 8; r++) {
         uint8_t row_byte = font_matrix[r]; 
         for (int b = 0; b < 8; b++) {
@@ -167,14 +167,14 @@ void draw_string_graphics(int x, int y, const char* str, uint32_t color) {
     }
 }
 
-// Sembolik Türkiye Haritası Çizim Yardımcısı (Görsel 2 ve 3)
+// Sembolik Türkiye Haritası Çizim Yardımcısı (COLOR_LAND_GRAY hatası düzeltildi)
 void draw_turkey_map_vector(int x, int y) {
     draw_filled_rectangle(x, y, 400, 180, COLOR_MAP_BG);
     draw_rectangle_outline(x, y, 400, 180, COLOR_WHITE);
     // Anadolu Ana Gövde
-    draw_filled_rectangle(x + 40, y + 40, 320, 100, COLOR_LAND_GRAY);
+    draw_filled_rectangle(x + 40, y + 40, 320, 100, COLOR_LIGHT_GRAY);
     // Trakya
-    draw_filled_rectangle(x + 10, y + 20, 50, 40, COLOR_LAND_GRAY);
+    draw_filled_rectangle(x + 10, y + 20, 50, 40, COLOR_LIGHT_GRAY);
     // İstanbul Pin Noktası
     draw_filled_rectangle(x + 55, y + 45, 8, 8, 0xFFFF0000); 
     draw_string_graphics(x + 70, y + 45, "Istanbul", COLOR_TEXT_LIGHT);
@@ -294,7 +294,7 @@ void draw_ui_summary_screen(void) {
     draw_string_graphics(box_x + 180, box_y + 380, "BASLAT", COLOR_TEXT_LIGHT);
 }
 
-// EKRAN 4: Gelişmiş Masaüstü (Son Ekran Görüntüsü)
+// EKRAN 4: Gelişmiş Masaüstü
 void draw_ui_main_desktop(void) {
     draw_vertical_gradient(0x02110222, 0x00021102); // Koyu Fırtına Teması
     
@@ -341,7 +341,7 @@ void draw_ui_main_desktop(void) {
     int pop_y = (SCREEN_HEIGHT / 2) - 30;
     draw_filled_rectangle(pop_x, pop_y, pop_w, pop_h, COLOR_WHITE);
     draw_rectangle_outline(pop_x, pop_y, pop_w, pop_h, COLOR_GLOW_CYAN);
-    draw_filled_rectangle(pop_x + 15, pop_y + 40, 50, 50, COLOR_DARK_BLUE); // Kalem/Fırça simgesi alanı
+    draw_filled_rectangle(pop_x + 15, pop_y + 40, 50, 50, COLOR_DARK_BLUE); 
     draw_string_graphics(pop_x + 85, pop_y + 35, "HOS GELDINIZ", COLOR_TEXT_DARK);
     draw_string_graphics(pop_x + 85, pop_y + 65, "Sisteme Hos Geldiniz!", COLOR_TEXT_DARK);
     draw_string_graphics(pop_x + 85, pop_y + 95, "GHHOD GERLDIN!", COLOR_ACTIVE_BLUE);
