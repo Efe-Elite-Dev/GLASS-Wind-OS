@@ -3,18 +3,17 @@
 
 #include <stdint.h>
 
-// Global Değişkenler (Diğer dosyalar da buraya bakacak)
+// Global değişkenler
 extern uint32_t* FRAMEBUFFER;
 extern int SCREEN_W;
 extern int SCREEN_H;
 
-// Grafik Fonksiyonları (Prototype)
+// Fonksiyonlar
 void draw_pixel(int x, int y, uint32_t color);
 void draw_rect(int x, int y, int w, int h, uint32_t color);
 void draw_rounded_rect(int x, int y, int w, int h, int radius, uint32_t color);
 void render_ui(void);
-
-// Kernel Giriş Noktası
-extern void kernel_main(void* mboot_ptr, uint32_t magic);
+void force_graphics_hardware(void);
+void kpanic(uint8_t error_code, const char* message);
 
 #endif
