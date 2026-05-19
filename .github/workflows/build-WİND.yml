@@ -16,21 +16,14 @@ jobs:
 
       - name: Clean, Compile and Link Complete OS
         run: |
-          # 1. Önbellekte kalan eski .o kalıntılarını ve eski binary'yi tamamen temizle
           rm -f *.o kernel.bin
-          
-          # 2. Assembly kaynaklarını (bootloader/kernel giriş noktası) derle
           nasm -f elf32 boot.asm -o boot.o
-          
-          # 3. Klasördeki tüm C kaynak dosyalarını çakışmasız ve bağımsız olarak derle
           gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c *.c
-          
-          # 4. Tüm nesne (.o) dosyalarını linker script (linker.ld) ile kernel.bin olarak bağla
           ld -m elf_i386 -T linker.ld -o kernel.bin *.o
 
-      - name: Generate Direct Output Release
-        uses: softprops/action-gh-release@v1
+      # Etiket (Tag) derdi olmadan kernel.bin dosyasını doğrudan GitHub Actions panelinden indirmek için:
+      - name: Upload Kernel Binary
+        uses: actions/upload-artifact@v4
         with:
-          files: kernel.bin
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: SkyCore-Kernel-Output
+          path: kernel.bin
