@@ -1,48 +1,16 @@
-# boot.s - Sky-Core OS Multiboot Header & Entry Point (GNU Assembler Syntax)
-.intel_syntax noprefix
+section .multiboot
+align 4
+    MULTIBOOT_MAGIC    equ 0x1BADB002
+    ; Flagler: bit 0 (hizala) + bit 1 (bellek haritası) + bit 2 (grafik modu isteği)
+    MULTIBOOT_FLAGS    equ 0x00000007 
+    MULTIBOOT_CHECKSUM equ -(MULTIBOOT_MAGIC + MULTIBOOT_FLAGS)
 
-# Multiboot Sabitleri
-.set MULTIBOOT_ALIGN,     1 << 0
-.set MULTIBOOT_MEMINFO,   1 << 1
-.set MULTIBOOT_GRAPHICS,  1 << 2  
-.set MULTIBOOT_FLAGS,     MULTIBOOT_ALIGN | MULTIBOOT_MEMINFO | MULTIBOOT_GRAPHICS
-.set MULTIBOOT_MAGIC,     0x1BADB002
-.set MULTIBOOT_CHECKSUM,  -(MULTIBOOT_MAGIC + MULTIBOOT_FLAGS)
+    dd MULTIBOOT_MAGIC
+    dd MULTIBOOT_FLAGS
+    dd MULTIBOOT_CHECKSUM
 
-# Multiboot Başlığı (GRUB Ayarları)
-.section .multiboot
-.align 4
-    .long MULTIBOOT_MAGIC
-    .long MULTIBOOT_FLAGS
-    .long MULTIBOOT_CHECKSUM
-    
-    # DOĞRU ELF DÜZENİ: Dolgu alanları kaldırıldı, grafik istekleri direkt checksum arkasına yazıldı
-    .long 0     # mode_type (0 = Linear Graphics Mode)
-    .long 800   # Genişlik (Width)
-    .long 600   # Yükseklik (Height)
-    .long 32    # Renk Derinliği (BPP)
-
-# Giriş Noktası ve Çekirdek Bağlantısı
-.section .text
-.global _start
-.extern kernel_main
-
-_start:
-    cli
-    mov esp, OFFSET stack_top   
-    
-    push ebx                    
-    push eax                    
-    
-    call kernel_main            
-    
-.halt:
-    hlt                         
-    jmp .halt
-
-# Yığın (Stack) Bellek Alanı
-.section .bss
-.align 16
-stack_bottom:
-    .skip 16384                 
-stack_top:
+    ; EĞER BIT 2 AKTİFSE BU ALANLAR TAM OLARAK BU SIRAYLA OLMALIDIR:
+    dd 0          ; mode_type: 0 = Lineer Grafik Modu (VBE)
+    dd 1024       ; width (Genişlik)
+    dd 768        ; height (Yükseklik)
+    dd 32         ; depth (Renk derinliği - bpp)
