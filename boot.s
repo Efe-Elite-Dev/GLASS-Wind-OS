@@ -16,15 +16,8 @@
     .long MULTIBOOT_FLAGS
     .long MULTIBOOT_CHECKSUM
     
-    # KRİTİK DÜZELTME: Grafik alanlarının 32. byte offsetine oturması için dolgu alanları
-    .long 0   # header_addr
-    .long 0   # load_addr
-    .long 0   # load_end_addr
-    .long 0   # bss_end_addr
-    .long 0   # entry_addr
-    
-    # Ekran Çözünürlük ve LFB İstekleri (Tam olarak doğru offsette!)
-    .long 0   # mode_type (0 = Lineer Grafik Modu)
+    # DOĞRU ELF DÜZENİ: Dolgu alanları kaldırıldı, grafik istekleri direkt checksum arkasına yazıldı
+    .long 0     # mode_type (0 = Linear Graphics Mode)
     .long 800   # Genişlik (Width)
     .long 600   # Yükseklik (Height)
     .long 32    # Renk Derinliği (BPP)
