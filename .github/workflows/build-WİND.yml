@@ -1,4 +1,4 @@
-name: Build WindOS
+name: Build WindOS ISO
 
 on:
   push:
@@ -9,34 +9,75 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Repo çek
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: GCC 32-bit kur
+      - name: Install Tools
         run: |
           sudo apt update
-          sudo apt install -y gcc-multilib nasm
 
-      - name: boot.asm derle
+          sudo apt install -y \
+            gcc-multilib \
+            nasm \
+            xorriso \
+            grub-pc-bin \
+            grub-common \
+            mtools
+
+      - name: Build boot.asm
         run: |
           nasm -f elf32 boot.asm -o boot.o
 
-      - name: lyn.c derle
+      - name: Build kernel.c
         run: |
           gcc -m32 \
               -ffreestanding \
               -fno-pie \
               -fno-stack-protector \
               -nostdlib \
-              -c lyn.c -o lyn.o
+              -c kernel.c -o kernel.o
 
-      - name: Kernel link
+      - name: Link kernel
         run: |
           ld -m elf_i386 \
              -T linker.ld \
              -o windos.elf \
-             boot.o lyn.o
+             boot.o kernel.o
 
-      - name: Kernel kontrol
+      - name: Create ISO folders
         run: |
-          file windos.elf
+          mkdir -p iso/boot/grub
+
+      - name: Copy kernel
+        run: |
+          cp windos.elf iso/boot/windos.elf
+
+      - name: Create grub.cfg
+        run: |
+          echo 'set timeout=0' > iso/boot/grub/grub.cfg
+          echo 'set default=0' >> iso/boot/grub/grub.cfg
+          echo '' >> iso/boot/grub/grub.cfg
+          echo 'menuentry "Wind OS"' >> iso/boot/grub/grub.cfg
+          echo '{' >> iso/boot/grub/grub.cfg
+          echo '    multiboot /boot/windos.elf' >> iso/boot/grub/grub.cfg
+          echo '    boot' >> iso/boot/grub/grub.cfg
+          echo '}' >> iso/boot/grub/grub.cfg
+
+      - name: Build ISO
+        run: |
+          grub-mkrescue -o WindOS.iso iso
+
+      - name: Upload ISO Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WindOS-ISO
+          path: WindOS.iso
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: latest
+          files: WindOS.iso
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
