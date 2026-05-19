@@ -1,14 +1,20 @@
-#include "sky_core.h"
+#include "globals.h"
+#include "gui.h"
 
-void kpanic(uint8_t error_code, const char* message) {
-    (void)error_code;
-    (void)message;
+void kpanic(const char* message) {
+    uint32_t* fb = (uint32_t*)GRAPHICS_FRAMEBUFFER;
     
-    // HATA BURADAYDI: FRAMEBUFFER -> GRAPHICS_FRAMEBUFFER oldu
-    if(GRAPHICS_FRAMEBUFFER) {
-        // Ekranın sol üstünde kırmızı bir kare çizerek hata olduğunu belli et
-        for(int i = 0; i < 100; i++) GRAPHICS_FRAMEBUFFER[i] = 0xFFFF0000;
+    if(fb) {
+        for(int i = 0; i < 1000; i++) {
+            fb[i] = 0xFFFF0000; 
+        }
     }
     
-    while(1); // Sonsuz döngü (Kernel paniği)
+    draw_rect(150, 200, 500, 150, 0xAA0000); 
+    draw_text("!!! KERNEL PANIC !!!", 280, 230, 0xFFFFFF);
+    draw_text(message, 180, 280, 0xFFFFFF);
+    
+    while(1) {
+        __asm__ volatile("hlt");
+    }
 }
