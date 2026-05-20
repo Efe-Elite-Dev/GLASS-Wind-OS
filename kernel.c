@@ -1,8 +1,30 @@
 #include "kernel.h"
 
 /* =========================================================
-   GLOBAL VE STATİK DEĞİŞKENLER
-   (kernel.h içinde bulunmayan, sadece kernel.c'ye özel olanlar)
+   PORT G/Ç FONKSİYONLARI (Implicit Declaration Çözümü)
+   ========================================================= */
+static inline u8 inb(u16 port) {
+    u8 value;
+    __asm__ volatile("inb %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
+static inline void outb(u16 port, u8 value) {
+    __asm__ volatile("outb %0, %1" : : "a"(value), "Nd"(port));
+}
+
+static inline u32 inl(u16 port) {
+    u32 value;
+    __asm__ volatile("inl %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
+static inline void outl(u16 port, u32 value) {
+    __asm__ volatile("outl %0, %1" : : "a"(value), "Nd"(port));
+}
+
+/* =========================================================
+   GLOBAL VE STATİK DEĞİŞKENLER (Undeclared Hatası Çözümü)
    ========================================================= */
 static u32* FB        = (u32*)0;
 static u32  SCR_W     = 1024;
@@ -11,25 +33,20 @@ static u32  SCR_PITCH = 1024;
 
 static OS_State state = STATE_SETUP_1_NAME;
 
-static u8 start_menu_open   = 0;
-static u8 file_manager_open = 0;
+// Kullanılmayan değişken uyarılarını susturmak için attribute eklendi
+static u8 start_menu_open   __attribute__((unused)) = 0;
+static u8 file_manager_open __attribute__((unused)) = 0;
 
 static i32 mouse_x = 512;
 static i32 mouse_y = 384;
+static u8  mouse_btn = 0;
+static u8  prev_mouse_btn = 0;
 
-/* * NOT: mouse_btn, prev_mouse_btn, username, user_len, font8x8, 
- * inb, outb, put_pixel ve fill_rect zaten kernel.h içinde tanımlı 
- * olduğu için çakışma (redefinition) hatası vermemesi adına buraya tekrar eklenmedi.
- */
-
-/* =========================================================
-   PORT G/Ç SATIR-İÇİ (INLINE) FONKSİYONLARI
-   ========================================================= */
-static inline u32 inl(u16 p)       { u32 v; __asm__ volatile("inl %1,%0":"=a"(v):"Nd"(p)); return v; }
-static inline void outl(u16 p,u32 v){ __asm__ volatile("outl %0,%1"::"a"(v),"Nd"(p)); }
+static char username[32] __attribute__((unused)) = "Efe";
+static i32  user_len __attribute__((unused)) = 3;
 
 /* =========================================================
-   SÜRÜCÜ VE POLLING FONKSİYONLARI (Linker Hatalarını Çözen Kısım)
+   SÜRÜCÜ VE POLLING FONKSİYONLARI
    ========================================================= */
 
 void mouse_init(void) {
@@ -42,8 +59,6 @@ void mouse_init(void) {
     timeout = 100000;
     while(timeout--) { if((inb(0x64) & 2) == 0) break; }
     outb(0x64, 0x20);
-    
-    // Kendi farenizin ek veri paket hızı ayarları varsa buraya ekleyebilirsiniz.
 }
 
 void mouse_poll(void) {
@@ -64,7 +79,7 @@ void mouse_poll(void) {
             if(mouse_x > (i32)SCR_W - 1) mouse_x = SCR_W - 1;
             if(mouse_y > (i32)SCR_H - 1) mouse_y = SCR_H - 1;
 
-            // Değişkenler kernel.h'tan otomatik gelir
+            // Değişkenler artık yukarıda tanımlı olduğu için hata vermez
             prev_mouse_btn = mouse_btn;
             mouse_btn = (status & 0x07);
         }
@@ -83,8 +98,7 @@ u8 kbd_poll(void) {
 }
 
 void pci_scan(void) {
-    // PCI veri yollarını tarayan gövde. 
-    // Linker'ın hata vermemesi için şimdilik içi boş bırakıldı, mantığını ekleyebilirsin.
+    // PCI veri yollarını tarayan gövde (İçi şimdilik boş)
 }
 
 /* =========================================================
@@ -93,7 +107,6 @@ void pci_scan(void) {
 
 void screen1(u8 key) {
     // STATE_SETUP_1_NAME: Kullanıcı adı giriş ekranı çizimleri ve mantığı
-    // kernel.h içindeki fill_rect, put_pixel ve font fonksiyonlarını doğrudan kullanabilirsin.
 }
 
 void screen2(void) {
@@ -108,7 +121,7 @@ void kernel_main(multiboot_info_t* mbi){
     FB        = (u32*)(u32)mbi->framebuffer_addr;
     SCR_W     = mbi->framebuffer_width;
     SCR_H     = mbi->framebuffer_height;
-    SCR_PITCH = mbi->framebuffer_pitch / 4; // Satır byte genişliğini u32 piksele çeviriyoruz
+    SCR_PITCH = mbi->framebuffer_pitch / 4;
 
     // GRUB veri aktaramadıysa veya adres geçersizse VESA Fallback moduna geç
     if(!FB || SCR_W == 0){
