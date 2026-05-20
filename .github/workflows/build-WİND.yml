@@ -1,91 +1,51 @@
-name: Build WindOS ISO
+name: Build WindOS Kernel
 
 on:
   push:
-    branches: [ "main" ] # Sadece main branch pushlarında tetiklenmesi istersen (isteğe bağlı)
+    branches: [ "main", "master" ]
   pull_request:
-
-# Release oluşturabilmek için gerekli yazma izni
-permissions:
-  contents: write
+    branches: [ "main", "master" ]
 
 jobs:
-  build:
+  build-os:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    # 1. Depodaki kodları workflow alanına çekiyoruz
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-      - name: Install Tools
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            gcc-multilib \
-            nasm \
-            xorriso \
-            grub-pc-bin \
-            grub-common \
-            mtools
+    # 2. 64-bit Ubuntu üzerinde 32-bit (m32) derleme yapabilmek için gerekli paketleri kuruyoruz
+    - name: Install Multi-lib & Build Tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-multilib build-essential nasm
 
-      - name: Build boot.asm
-        run: |
+    # 3. boot.o dosyasını oluşturuyoruz (asm veya S durumuna göre otomatik algılar)
+    - name: Assemble Bootloader
+      run: |
+        if [ -f boot.asm ]; then
           nasm -f elf32 boot.asm -o boot.o
+        elif [ -f boot.S ]; then
+          gcc -m32 -c boot.S -o boot.o
+        else
+          echo "Hata: boot.asm veya boot.S dosyası bulunamadı!"
+          exit 1
+        fi
 
-      - name: Build kernel.c
-        run: |
-          gcc -m32 \
-              -ffreestanding \
-              -fno-pie \
-              -fno-stack-protector \
-              -nostdlib \
-              -c kernel.c -o kernel.o
+    # 4. kernel.c dosyasını derliyoruz
+    - name: Compile Kernel
+      run: |
+        gcc -m32 -ffreestanding -fno-builtin -O2 -Wall -c kernel.c -o kernel.o
 
-      - name: Link kernel
-        run: |
-          ld -m elf_i386 \
-             -T linker.ld \
-             -o windos.elf \
-             boot.o kernel.o
+    # 5. Bağlama (Link) aşaması (-z noexecstack uyarısı çözülmüş haliyle)
+    - name: Link Binaries
+      run: |
+        ld -m elf_i386 -z noexecstack boot.o kernel.o -o kernel.bin
 
-      - name: Create ISO folders
-        run: |
-          mkdir -p iso/boot/grub
-
-      - name: Copy kernel
-        run: |
-          cp windos.elf iso/boot/windos.elf
-
-      - name: Create grub.cfg
-        run: |
-          cat << 'EOF' > iso/boot/grub/grub.cfg
-          set timeout=0
-          set default=0
-
-          menuentry "Wind OS" {
-              multiboot /boot/windos.elf
-              boot
-          }
-          EOF
-
-      - name: Build ISO
-        run: |
-          grub-mkrescue -o WindOS.iso iso
-
-      - name: Upload ISO Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: WindOS-ISO
-          path: WindOS.iso
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/main'
-        with:
-          tag_name: latest
-          name: "WindOS Latest Build"
-          body: "Automated build of WindOS from main branch."
-          files: WindOS.iso
-          make_latest: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    # 6. Başarıyla derlenen kernel.bin dosyasını GitHub üzerinden indirilebilir artifact olarak yüklüyoruz
+    - name: Upload Kernel Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: WindOS-Kernel
+        path: kernel.bin
