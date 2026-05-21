@@ -1,10 +1,10 @@
 /*
- * Wind OS  -  kernel.c  v6 (Fütüristik Asimetrik Arayüz + Dosya/Browser)
+ * Wind OS  -  kernel.c  v6.1 (Build Fixes & Nano Optimizasyon)
  * DÜZELTİLEN/EKLENENLER:
- * 1. UI tamamen yenilendi: Asimetrik paneller, koyu tema, yeni ikon yerleşimleri.
- * 2. Hava Durumu widget'ı merkeze alındı, tasarım çizime benzetildi.
- * 3. .wind, .exe, .deb uzantı destekli modern Dosya Yöneticisi eklendi.
- * 4. Çizim motoruna diyagonal çizgi (line) fonksiyonu eklendi.
+ * 1. UTCK undeclared hatası çözüldü (USB tarama zamanlayıcısı eklendi).
+ * 2. -Wmisleading-indentation uyarıları temizlendi (kod satırları ayrıldı).
+ * 3. Kullanılmayan fonksiyonlar (itoa, isqrt) kaldırılarak boyut küçültüldü ("Nano" yaklaşımı).
+ * 4. Switch-case warning (OOBE state'leri) temizlendi.
  *
  * gcc -m32 -ffreestanding -fno-builtin -fno-stack-protector -O2 -w -c kernel.c -o kernel.o
  */
@@ -26,7 +26,6 @@ static u32 back_buffer[1024 * 768];
 static OS_State gST = STATE_DESKTOP;
 static OS_State pST = STATE_DESKTOP;
 static int DIRTY = 1;
-static u32 SYS_TICK = 0;
 
 /* ── YENİ FÜTÜRİSTİK RENKLER ─────────────────────── */
 #define CB   0xFFF4F4F6u
@@ -52,15 +51,6 @@ static void *mcpy(void *d,const void *s,u32 n){ u8*dp=(u8*)d;const u8*sp=(const 
 static u32 klen(const char *s){u32 n=0;while(s[n])n++;return n;}
 static void kcpy(char *d,const char *s){while(*s)*d++=*s++;*d=0;}
 
-static u32 isqrt(u32 n){ if(!n)return 0; u32 x=n,y=1; while(x>y){x=(x+y)/2;y=n/x;} return x; }
-
-static void itoa(int n, char s[]){
-    int i=0, sign; if ((sign = n) < 0) n = -n;
-    do { s[i++] = n % 10 + '0'; } while ((n /= 10) > 0);
-    if (sign < 0) s[i++] = '-'; s[i] = '\0';
-    for (int j = 0, k = i - 1; j < k; j++, k--){ char temp = s[j]; s[j] = s[k]; s[k] = temp; }
-}
-
 /* ── 8x8 BITMAP FONT (Sıkıştırılmış) ─────────────── */
 static const u8 F8[128][8]={
  [' ']={0,0,0,0,0,0,0,0},['!']={0x18,0x3C,0x3C,0x18,0x18,0,0x18,0},['"']={0x36,0x36,0,0,0,0,0,0},['#']={0x36,0x7F,0x36,0x36,0x7F,0x36,0x36,0},
@@ -77,15 +67,7 @@ static const u8 F8[128][8]={
  ['L']={0x0F,0x06,0x06,0x06,0x46,0x66,0x7F,0},['M']={0x63,0x77,0x7F,0x6B,0x63,0x63,0x63,0},['N']={0x63,0x67,0x6F,0x7B,0x73,0x63,0x63,0},['O']={0x1C,0x36,0x63,0x63,0x63,0x36,0x1C,0},
  ['P']={0x3F,0x66,0x66,0x3E,0x06,0x06,0x0F,0},['Q']={0x1E,0x33,0x33,0x33,0x3B,0x1E,0x38,0},['R']={0x3F,0x66,0x66,0x3E,0x36,0x66,0x67,0},['S']={0x1E,0x33,0x07,0x0E,0x38,0x33,0x1E,0},
  ['T']={0x3F,0x2D,0x0C,0x0C,0x0C,0x0C,0x1E,0},['U']={0x33,0x33,0x33,0x33,0x33,0x33,0x3F,0},['V']={0x33,0x33,0x33,0x33,0x33,0x1E,0x0C,0},['W']={0x63,0x63,0x63,0x6B,0x7F,0x77,0x63,0},
- ['X']={0x63,0x63,0x36,0x1C,0x36,0x63,0x63,0},['Y']={0x33,0x33,0x33,0x1E,0x0C,0x0C,0x1E,0},['Z']={0x7F,0x63,0x31,0x18,0x4C,0x66,0x7F,0},['[']={0x1E,0x06,0x06,0x06,0x06,0x06,0x1E,0},
- ['\\']={0x03,0x06,0x0C,0x18,0x30,0x60,0x40,0},[']']={0x1E,0x18,0x18,0x18,0x18,0x18,0x1E,0},['^']={0x08,0x1C,0x36,0x63,0,0,0,0},['_']={0,0,0,0,0,0,0,0xFF},
- ['`']={0x06,0x0C,0x18,0,0,0,0,0},['a']={0,0x1E,0x30,0x3E,0x33,0x33,0x6E,0},['b']={0x07,0x06,0x3E,0x66,0x66,0x66,0x3B,0},['c']={0,0x1E,0x33,0x03,0x03,0x33,0x1E,0},
- ['d']={0x38,0x30,0x3E,0x33,0x33,0x33,0x6E,0},['e']={0,0x1E,0x33,0x3F,0x03,0x33,0x1E,0},['f']={0x1C,0x36,0x06,0x0F,0x06,0x06,0x0F,0},['g']={0,0x6E,0x33,0x33,0x3E,0x30,0x33,0x1E},
- ['h']={0x07,0x06,0x36,0x6E,0x66,0x66,0x67,0},['i']={0x0C,0,0x0E,0x0C,0x0C,0x0C,0x1E,0},['j']={0x18,0,0x18,0x18,0x18,0x1B,0x1B,0x0E},['k']={0x07,0x06,0x66,0x36,0x1E,0x36,0x67,0},
- ['l']={0x0E,0x0C,0x0C,0x0C,0x0C,0x0C,0x1E,0},['m']={0,0x33,0x7F,0x7F,0x6B,0x63,0x63,0},['n']={0,0x1F,0x33,0x33,0x33,0x33,0x33,0},['o']={0,0x1E,0x33,0x33,0x33,0x33,0x1E,0},
- ['p']={0,0x3B,0x66,0x66,0x3E,0x06,0x06,0x0F},['q']={0,0x6E,0x33,0x33,0x3E,0x30,0x30,0x78},['r']={0,0x3B,0x6E,0x66,0x06,0x06,0x0F,0},['s']={0,0x3E,0x03,0x1E,0x30,0x33,0x1E,0},
- ['t']={0x08,0x3E,0x0C,0x0C,0x0C,0x2C,0x18,0},['u']={0,0x33,0x33,0x33,0x33,0x33,0x6E,0},['v']={0,0x33,0x33,0x33,0x33,0x1E,0x0C,0},['w']={0,0x63,0x6B,0x7F,0x7F,0x36,0x36,0},
- ['x']={0,0x63,0x36,0x1C,0x1C,0x36,0x63,0},['y']={0,0x33,0x33,0x33,0x3E,0x30,0x33,0x1E},['z']={0,0x3F,0x19,0x0C,0x26,0x3F,0,0},['{']={0x38,0x0C,0x0C,0x07,0x0C,0x0C,0x38,0},
+ ['X']={0,0x63,0x36,0x1C,0x1C,0x36,0x63,0},['Y']={0,0x33,0x33,0x33,0x3E,0x30,0x33,0x1E},['Z']={0,0x3F,0x19,0x0C,0x26,0x3F,0,0},['{']={0x38,0x0C,0x0C,0x07,0x0C,0x0C,0x38,0},
  ['|']={0x18,0x18,0x18,0,0x18,0x18,0x18,0},['}']={0x07,0x0C,0x0C,0x38,0x0C,0x0C,0x07,0},['~']={0x6E,0x3B,0,0,0,0,0,0},
 };
 
@@ -109,7 +91,8 @@ static void circ(i32 cx,i32 cy,i32 r,u32 c){
     for(i32 dy=-r;dy<=r;dy++) for(i32 dx=-r;dx<=r;dx++) if(dx*dx+dy*dy<=r*r) pp(cx+dx,cy+dy,c);
 }
 static void rr(i32 x,i32 y,i32 w,i32 h,i32 r,u32 c){
-    if(r>w/2) r=w/2; if(r>h/2) r=h/2;
+    if(r>w/2) r=w/2; 
+    if(r>h/2) r=h/2;
     fr(x+r,y,w-2*r,h,c); fr(x,y+r,r,h-2*r,c); fr(x+w-r,y+r,r,h-2*r,c);
     circ(x+r,y+r,r,c); circ(x+w-r-1,y+r,r,c); circ(x+r,y+h-r-1,r,c); circ(x+w-r-1,y+h-r-1,r,c);
 }
@@ -131,10 +114,10 @@ static void line(i32 x0, i32 y0, i32 x1, i32 y1, u32 c) {
 }
 
 static void dc(i32 x,i32 y,char ch,u32 fg,u32 bg,i32 sc){
-    if((u8)ch>=128) ch='?'; const u8 *g=F8[(u8)ch];
+    if((u8)ch>=128) ch='?'; 
+    const u8 *g=F8[(u8)ch];
     for(i32 row=0;row<8;row++) for(i32 col=0;col<8;col++) 
         if(g[row]&(1<<(7-col))) fr(x+col*sc,y+row*sc,sc,sc,fg);
-        /* Koyu temada metin arkası şeffaf olsun diye arkaplan çizimini kaldırdım (sc>1 için) */
 }
 static void ds(i32 x,i32 y,const char*s,u32 fg,u32 bg,i32 sc){
     i32 cx=x; while(*s){ if(*s=='\n'){cx=x;y+=8*sc;} else{dc(cx,y,*s,fg,bg,sc);cx+=8*sc;} s++; }
@@ -178,6 +161,7 @@ static void mouse_init(void){
     m_write(0xFF); u8 ack=m_read(); u8 ok=m_read(); m_read();
     if(ack==0xFA && ok==0xAA){ m_write(0xF6); m_read(); m_write(0xF4); m_read(); MOUSE_READY=1; }
 }
+
 static void mouse_poll(void){
     if(!MOUSE_READY) return;
     for(int iter=0;iter<16;iter++){
@@ -189,10 +173,15 @@ static void mouse_poll(void){
           case 1: MBF[1]=(i8)dat; MCY=2; break;
           case 2: MBF[2]=(i8)dat; MCY=0;{
             i32 dx=(i32)MBF[1]; i32 dy=(i32)MBF[2];
-            if(MBF[0]&0x10) dx|=(i32)0xFFFFFF00; if(MBF[0]&0x20) dy|=(i32)0xFFFFFF00;
-            if(MBF[0]&0x40) dx=0; if(MBF[0]&0x80) dy=0;
+            if(MBF[0]&0x10) dx|=(i32)0xFFFFFF00;
+            if(MBF[0]&0x20) dy|=(i32)0xFFFFFF00;
+            if(MBF[0]&0x40) dx=0;
+            if(MBF[0]&0x80) dy=0;
             MX+=dx; MY-=dy;
-            if(MX<0)MX=0; if(MY<0)MY=0; if(MX>=(i32)SW) MX=(i32)SW-1; if(MY>=(i32)SH) MY=(i32)SH-1;
+            if(MX<0) MX=0;
+            if(MY<0) MY=0;
+            if(MX>=(i32)SW) MX=(i32)SW-1;
+            if(MY>=(i32)SH) MY=(i32)SH-1;
             PMLB=MLB; MLB=(MBF[0]&0x01)?1:0; MRB=(MBF[0]&0x02)?1:0;
           } break;
         }
@@ -220,7 +209,7 @@ static int BTN_C(i32 x, i32 y, i32 w, i32 h, const char* lbl, u32 c_icon, int is
     if (is_active) bg = 0xFF4F545Cu;
     rr(x, y, w, h, 8, bg);
     rb(x, y, w, h, PAN_BD, 1);
-    circ(x + w/2, y + 25, 12, c_icon); /* Renkli ikon dairesi */
+    circ(x + w/2, y + 25, 12, c_icon); 
     dsc(x, y + 45, w, lbl, CTXT, bg, 1);
     return CLK(x,y,w,h);
 }
@@ -246,6 +235,7 @@ static i32 FX=120,FY=90, CX=400, CY=200, BX=150, BY=100;
 static int FD=0, FDX=0, FDY=0, CDrag=0, CDX=0, CDY=0, BDrag=0, BDX=0, BDY=0;
 static int FS=-1;
 static char CALC_DISP[32]="0"; static int CALC_LEN=1;
+static int UTCK=0;
 
 /* Uzantı kontrolü */
 static int is_ext(const char *n, const char *ext) {
@@ -439,7 +429,10 @@ void kernel_main(multiboot_info_t *mbi){
     while(1){
         mouse_poll(); kbd_poll();
         if(gST!=pST){DIRTY=1;pST=gST;}
-        switch(gST){ case STATE_DESKTOP: DESKTOP(); break; }
+        switch(gST){ 
+            case STATE_DESKTOP: DESKTOP(); break; 
+            default: break;
+        }
         CUR(); swap_buffers();
         volatile int x=50000;while(x--)__asm__("nop");
     }
