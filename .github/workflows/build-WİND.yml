@@ -1,28 +1,86 @@
-name: WindBrowser Hızlı Paketleyici (Ubuntu)
+name: Sky-Core-OS Build CI
+name: Build Wind OS ISO
 
 on:
   push:
     branches: [ "main", "master" ]
-  workflow_dispatch:
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # İstediğinde GitHub paneli üzerinden el ile de başlatabilmen için
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Kodu Klonla
+    - name: Checkout Repository
+    - name: Repoyu Klonla
       uses: actions/checkout@v4
 
-    - name: WindOS Paketi Hazirla (.wind)
+    - name: Install Build Dependencies
+    - name: Gerekli Derleme Araçlarını Kur
       run: |
-        mkdir -p WindBrowser_WindOS
-        cp windbrowser.py WindBrowser_WindOS/
-        echo "AppName: WindBrowser" > WindBrowser_WindOS/manifest.txt
-        echo "Core: WindOS V7" >> WindBrowser_WindOS/manifest.txt
-        tar -czf WindBrowser.wind WindBrowser_WindOS
+        sudo apt-get update
+        sudo apt-get install -y gcc nasm xorriso grub-pc-bin os-prober mtools
 
-    - name: Paketi Cikti Olarak Ver
+    - name: Compile Assembly (boot.asm)
+      run: |
+        nasm -f elf32 boot.asm -o boot.o
+
+    - name: Compile Kernel (kernel.c)
+      run: |
+        gcc -m32 -ffreestanding -fno-builtin -fno-stack-protector -O2 -Wall -c kernel.c -o kernel.o
+
+    - name: Link Kernel Binaries
+      run: |
+        ld -m elf_i386 -T linker.ld boot.o kernel.o -o kernel.bin
+
+    - name: Prepare ISO Structure and GRUB Config
+      run: |
+        mkdir -p iso/boot/grub
+        cp kernel.bin iso/boot/kernel.bin
+        
+        echo 'set default=0' > iso/boot/grub/grub.cfg
+        echo 'set timeout=0' >> iso/boot/grub/grub.cfg
+        echo 'menuentry "Sky-Core-OS Core 1" {' >> iso/boot/grub/grub.cfg
+        echo '	multiboot /boot/kernel.bin' >> iso/boot/grub/grub.cfg
+        echo '	boot' >> iso/boot/grub/grub.cfg
+        echo '}' >> iso/boot/grub/grub.cfg
+
+    - name: Build Sky-Core-OS ISO
+      run: |
+        grub-mkrescue -o sky_os.iso iso
+
+    - name: Verify ISO Creation
+      run: |
+        if [ -f sky_os.iso ]; then
+          echo "SUCCESS: sky_os.iso created successfully!"
+        else
+          echo "ERROR: sky_os.iso not found!"
+          exit 1
+        fi
+
+    - name: Upload Build Artifact (ISO)
+        sudo apt-get install -y \
+          nasm \
+          gcc-multilib \
+          binutils \
+          grub-common \
+          grub-pc-bin \
+          xorriso \
+          mtools
+
+    - name: build.sh Çalıştırılabilir Yap
+      run: chmod +x build.sh
+
+    - name: İşletim Sistemini Derle ve ISO Üret
+      run: ./build.sh
+
+    - name: Üretilen ISO Dosyasını Artifact Olarak Yükle
       uses: actions/upload-artifact@v4
       with:
-        name: WindBrowser-Paketi
-        path: WindBrowser.wind
+        name: Sky-Core-OS-ISO
+        path: sky_os.iso
+        name: windos-iso-package
+        path: windos.iso
+        if-no-files-found: error
