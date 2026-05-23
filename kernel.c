@@ -1,6 +1,6 @@
 /*
- * Wind OS  -  kernel.c  v10.0 Originality Edition (Top Drawer & 4D Flip)
- * Lead Developer: Efe (WindOS Team)
+ * Wind OS  -  kernel.c  v10.1 Solid Performance (Kasmalar ve Çökmeler Giderildi)
+ * Lead Developer: WindOS Team
  */
 #include "kernel.h"
 
@@ -16,9 +16,6 @@ static u32 SW = 1024, SH = 768, SP = 1024;
 static u32 back_buffer[1024 * 768];
 
 static OS_State gST = STATE_DESKTOP;
-
-/* VIRTUALBOX 4 BOYUTLU EKRAN DÜZELTİCİSİ (0=Normal, 1=Ters X, 2=Ters Y, 3=Tam Ters) */
-static int FLIP_MODE = 3; 
 
 /* RENK PALETI */
 #define CW       0xFFFFFFFFu 
@@ -88,16 +85,10 @@ static void dc(i32 x,i32 y,char ch,u32 fg,u32 bg,i32 sc){ if((u8)ch>=128) ch='?'
 static void ds(i32 x,i32 y,const char*s,u32 fg,u32 bg,i32 sc){ while(*s){ if(*s=='\n'){x=0;y+=8*sc+2;} else{dc(x,y,*s,fg,bg,sc);x+=8*sc;} s++; } }
 static void dsc(i32 x,i32 y,i32 w,const char*s,u32 fg,u32 bg,i32 sc){ i32 tw=(i32)klen(s)*8*sc; if(tw<w) ds(x+(w-tw)/2,y,s,fg,bg,sc); else ds(x,y,s,fg,bg,sc); }
 
-/* VIRTUALBOX 4 BOYUTLU EKRAN DÜZELTİCİSİ (Ayna Hatası Çözümü) */
+/* SISTEMI RAHATLATAN, SAF HIZLI EKRAN CIZICI (Tüm Takla/Ayna Kodlari Silindi) */
 static void swap_buffers(void) { 
     u32 total = SW * SH; 
-    for(u32 y = 0; y < SH; y++) {
-        for(u32 x = 0; x < SW; x++) {
-            u32 src_x = (FLIP_MODE & 1) ? (SW - 1 - x) : x;
-            u32 src_y = (FLIP_MODE & 2) ? (SH - 1 - y) : y;
-            FB[y * SW + x] = back_buffer[src_y * SW + src_x];
-        }
-    }
+    for(u32 i = 0; i < total; i++) FB[i] = back_buffer[i];
 }
 
 /* KLAVYE & MOUSE */
@@ -108,10 +99,6 @@ static u8 kbd_poll(void){
     if(sc&0x80){ u8 r=sc&0x7F; if(r==0x2A||r==0x36) K_SH=0; return 0; } 
     if(sc==0x2A||sc==0x36){K_SH=1;return 0;} if(sc==0x3A){K_CP=!K_CP;return 0;} if(sc>=128) return 0; 
     char c=SCMAP[sc]; if(!c) return 0; 
-    
-    /* F Tuşuna Basınca Ekran Modunu Değiştir (0'dan 3'e kadar döner) */
-    if (c == 'f' || c == 'F') { FLIP_MODE = (FLIP_MODE + 1) % 4; }
-
     if(c>='a'&&c<='z'){ if(K_SH^K_CP) c-=32; } 
     return (u8)c; 
 }
@@ -141,10 +128,6 @@ static void mouse_poll(void){
                     if(MBF[0] & 0x10) dx |= (i32)0xFFFFFF00; 
                     if(MBF[0] & 0x20) dy |= (i32)0xFFFFFF00; 
 
-                    /* Faremizi Ekranin Flip Moduna Gore Otomatik Esle */
-                    if (FLIP_MODE & 1) dx = -dx;
-                    if (FLIP_MODE & 2) dy = -dy;
-
                     MX += dx; MY -= dy;
 
                     if(MX < 0) MX = 0; if(MY < 0) MY = 0; 
@@ -167,6 +150,17 @@ typedef struct { char n[15]; int is_dir; } FAT_File;
 static FAT_File fat32_files[16];
 static int fat32_file_count = 0;
 static int DISK_READ_SUCCESS = 0;
+static int REAL_USB_DETECTED = 0; 
+
+static u32 pci_rd(u8 bus,u8 dev,u8 fn,u8 off){ outl(0xCF8,0x80000000u|((u32)bus<<16)|((u32)dev<<11)|((u32)fn<<8)|(off&0xFC)); return inl(0xCFC); }
+static void pci_scan_usb(void){
+    REAL_USB_DETECTED = 0;
+    for(int b=0; b<4; b++) for(int d=0; d<32; d++) {
+        u32 id = pci_rd(b, d, 0, 0); if((id & 0xFFFF) == 0xFFFF) continue;
+        u32 cls = pci_rd(b, d, 0, 8); 
+        if((u8)(cls >> 24) == 0x0C && (u8)(cls >> 16) == 0x03) REAL_USB_DETECTED = 1;
+    }
+}
 
 static int ata_read_sector(u32 lba, u8* buffer) {
     u32 timeout = 100000;
@@ -259,7 +253,7 @@ static void FILEMGR(void){
     rr(fx+15, fy+245, sb-30, 40, 6, !FU ? PAN_BD : SIDEBAR);
     ds(fx+30, fy+260, "Yerel Disk (C:)", CW, 0, 1);
 
-    if(CLK(fx+15, fy+290, sb-30, 40)) { FU=1; fat32_scan(); }
+    if(CLK(fx+15, fy+290, sb-30, 40)) { FU=1; pci_scan_usb(); fat32_scan(); }
     rr(fx+15, fy+290, sb-30, 40, 6, FU ? PAN_BD : SIDEBAR);
     circ(fx+35, fy+310, 5, WIN_BLUE);
     ds(fx+50, fy+305, "USB Surucu (D:)", CW, 0, 1);
@@ -289,8 +283,12 @@ static void FILEMGR(void){
             }
             if(fat32_file_count == 0) ds(cx2, cy2, "USB Surucusu Bos veya Klasor Bulunamadi.", CGY, 0, 1);
         } else {
-            ds(cx2, cy2, "USB CIKARTILDI VEYA OKUNAMIYOR!", CRD, 0, 1);
-            ds(cx2, cy2+25, "ATA kontrolcusu fiziksel baglantiyi kopardiginizi onayladi.", CGY, 0, 1);
+            if (REAL_USB_DETECTED) {
+                ds(cx2, cy2, "USB CIKARTILDI VEYA OKUNAMIYOR!", CRD, 0, 1);
+                ds(cx2, cy2+25, "ATA kontrolcusu fiziksel baglantiyi kopardiginizi onayladi.", CGY, 0, 1);
+            } else {
+                ds(cx2, cy2, "USB KONTROLCUSU BULUNAMADI!", CRD, 0, 1);
+            }
         }
     } else {
         char* l_names[] = {"Sistem", "Projeler", "Kullanicilar"};
@@ -310,59 +308,57 @@ static void TERMINAL(void) {
     if (TDrag) { if (MLB) { TY -= MY-MY; TX = MX - TDX; TY = MY - TDY; if(TX<0)TX=0; if(TY<0)TY=0; if(TX>SW-TW)TX=SW-TW; if(TY>SH-TH)TY=SH-TH; } else TDrag = 0; }
     DRAW_WINDOW(TX, TY, TW, TH, "Wind Terminal V2", CK);
     rr(TX+15, TY+50, TW-30, TH-65, 5, CK); 
-    ds(TX+25, TY+60, "> WindOS V10.0 - Top Drawer UX Active", CGN, 0, 1); 
+    ds(TX+25, TY+60, "> WindOS V10.1 - Solid Drawer Edition", CGN, 0, 1); 
     if(CLK(TX+TW-45, TY+5, 40, 30)) TERM_OPEN = 0;
 }
 
 static void DESKTOP(void){
     fr(0, 0, (i32)SW, (i32)SH, BG_BASE);
     
-    /* YENI NESİL: Üst Ortadan Açılan Çekmece (Drop-down Drawer) */
+    /* Üst Ortadan Açılan Çekmece (Drop-down Drawer) */
     i32 dw = 600, dh = 350;
     i32 dx = (SW - dw) / 2;
     
     if (DRAWER_OPEN) {
-        /* Çekmece Gövdesi */
         fr(dx+5, 0, dw, dh+5, SHADOW); 
         rr(dx, 0, dw, dh, 12, SIDEBAR);
         rb(dx, 0, dw, dh, PAN_BD, 2);
         
-        /* Çekmece Kapatma Butonu (Aşağıda) */
-        rr(dx + dw/2 - 40, dh - 20, 80, 10, 4, PAN_BD);
-        if(CLK(dx, 0, dw, dh)) { /* Eger bosluga tiklarsa acik kalsin, baska bir yere tiklarsa kapansin mantigi da yapilabilir */ }
+        /* Çekmece Kapatma Butonu */
+        rr(dx + dw/2 - 40, dh - 25, 80, 15, 4, PAN_BD);
+        ds(dx + dw/2 - 4, dh - 20, "^", CGY, 0, 1);
         if(CLK(dx + dw/2 - 50, dh - 30, 100, 30)) DRAWER_OPEN = 0;
         
-        /* İkonları Çekmece İçine Çiz (Klasik Masaüstü İkonlarını Sildik) */
         for(int i=0; i<9; i++) {
             if(!AP[i].inst) continue;
             i32 ix = dx + 30 + (i%5)*110; 
             i32 iy = 40 + (i/5)*120;
             
             rr(ix, iy, 90, 80, 8, HOV(ix, iy, 90, 80) ? PAN_BD : PAN_BG);
-            if(i==0) { /* Dosyalar İkonu (Özel Çizim) */
+            if(i==0) { 
                 fr(ix+35, iy+20, 14, 10, AP[i].col); rr(ix+25, iy+28, 40, 24, 4, AP[i].col);
             } else {
                 fr(ix+30, iy+25, 30, 20, AP[i].col);
             }
             dsc(ix, iy+70, 90, AP[i].n, CTXT, 0, 1);
             
-            /* Tıklama Olayları */
             if(CLK(ix, iy, 90, 80)) {
-                if(i == 0) FO = !FO; /* Dosyalar */
-                if(i == 1) TERM_OPEN = !TERM_OPEN; /* Terminal */
-                DRAWER_OPEN = 0; /* Uygulama açılınca çekmece otomatik kapansın */
+                if(i == 0) FO = !FO; 
+                if(i == 1) TERM_OPEN = !TERM_OPEN; 
+                DRAWER_OPEN = 0; 
             }
         }
     } else {
-        /* Çekmeceyi Açma Kulpu (Handle) */
-        rr(SW/2 - 60, -10, 120, 30, 8, SIDEBAR);
-        rb(SW/2 - 60, -10, 120, 30, PAN_BD, 1);
+        /* Çekmeceyi Açma Kulpu (Güvenli Sınırlar İçinde) */
+        rr(SW/2 - 60, 0, 120, 25, 8, SIDEBAR);
+        rb(SW/2 - 60, 0, 120, 25, PAN_BD, 1);
         ds(SW/2 - 4, 8, "v", CGY, 0, 1);
-        if(CLK(SW/2 - 60, 0, 120, 30)) DRAWER_OPEN = 1;
+        if(CLK(SW/2 - 60, 0, 120, 25)) DRAWER_OPEN = 1;
     }
 
     FILEMGR(); TERMINAL();
     
+    /* Kurulum Ekrani */
     if(INSTALLING) {
         i32 px = SW/2 - 180, py = SH/2 - 70;
         fr(px+8, py+8, 360, 140, SHADOW); rr(px, py, 360, 140, 10, INSTALLING==1 ? WIN_BLUE : LIN_ORG);
@@ -371,8 +367,8 @@ static void DESKTOP(void){
         rr(px+30, py+90, 300, 20, 5, CK); rr(px+30, py+90, INSTALL_PROG * 3, 20, 5, CW); 
         INSTALL_PROG += 1;
         if(INSTALL_PROG >= 100) { 
-            if(INSTALLING == 1) AP[2].inst = 1; /* Tarayıcı */ 
-            if(INSTALLING == 2) AP[1].inst = 1; /* Terminal */ 
+            if(INSTALLING == 1) AP[2].inst = 1;  
+            if(INSTALLING == 2) AP[1].inst = 1;  
             INSTALLING = 0; 
         }
     }
