@@ -1,4 +1,7 @@
-
+/*
+ * Wind OS  -  kernel.c  v10.8 Pure Orientation (Ayna ve Terslik Çözüldü)
+ * Lead Developer: Efe (WindOS Team)
+ */
 #include "kernel.h"
 
 typedef unsigned int   u32;
@@ -8,7 +11,6 @@ typedef int            i32;
 typedef signed char    i8;
 #define NULL ((void*)0)
 
-/* ÇAKIŞMA ÇÖZÜLDÜ: kernel.h dosyasında zaten olduğu için typedef sökülüp atıldı! */
 static OS_State gST = STATE_DESKTOP;
 
 static volatile u32 *FB = (u32*)0;
@@ -18,7 +20,7 @@ static u32 back_buffer[1024 * 768];
 /* RENK PALETI (Xubuntu Tarzı Koyu Tema) */
 #define CW       0xFFFFFFFFu 
 #define CK       0xFF000000u 
-#define BG_BASE  0xFF2D2D2Du /* Xubuntu Koyu Gri Arka Plan */
+#define BG_BASE  0xFF2D2D2Du 
 #define TASKBAR  0xFF1E1E1Eu 
 #define PAN_BG   0xFF353535u 
 #define PAN_BD   0xFF454545u 
@@ -26,7 +28,7 @@ static u32 back_buffer[1024 * 768];
 #define CTXT     0xFFE3E5E8u 
 #define CGY      0xFFAAAAAAu 
 #define WIN_BLUE 0xFF0078D7u 
-#define XUB_BLU  0xFF3498DBu /* Xubuntu Mavi Vurgusu */
+#define XUB_BLU  0xFF3498DBu 
 #define COR      0xFFFFCA28u 
 #define CRD      0xFFE74C3Cu 
 #define CGN      0xFF2ECC71u 
@@ -84,17 +86,19 @@ static void ds(i32 x,i32 y,const char*s,u32 fg,u32 bg,i32 sc){ while(*s){ if(*s=
 static void dsc(i32 x,i32 y,i32 w,const char*s,u32 fg,u32 bg,i32 sc){ i32 tw=(i32)klen(s)*8*sc; if(tw<w) ds(x+(w-tw)/2,y,s,fg,bg,sc); else ds(x,y,s,fg,bg,sc); }
 
 /* ========================================================================= */
-/* EFSANEVİ 180 DERECE 0-LAG EKRAN ÇEVİRİCİ                                  */
-/* İşlemciyi yormadan tek boyutlu dizi ile ekranı mükemmel düzeltir!         */
+/* EFSANEVİ VE KUSURSUZ EKRAN ÇEVİRİCİ (V10.8)                               */
+/* Sadece satırları (Y) çevirir, sütunlara (X) dokunmaz. Ayna hatası YOK!    */
 /* ========================================================================= */
 static void swap_buffers(void) { 
-    u32 total = SW * SH; 
-    for(u32 i = 0; i < total; i++) {
-        FB[i] = back_buffer[total - 1 - i]; 
+    for(u32 y = 0; y < SH; y++) {
+        for(u32 x = 0; x < SW; x++) {
+            /* (SH - 1 - y) sadece dikeyde takla attırır. Harfler düz okunur! */
+            FB[y * SP + x] = back_buffer[(SH - 1 - y) * SP + x];
+        }
     }
 }
 
-/* KLAVYE & MOUSE DEGİSKENLERI VE FONKSIYONLARI */
+/* KLAVYE & MOUSE */
 static const char SCMAP[128]={ 0,27,'1','2','3','4','5','6','7','8','9','0','-','=',8,'\t','q','w','e','r','t','y','u','i','o','p','[',']','\n',0,'a','s','d','f','g','h','j','k','l',';','\'','`',0,'\\','z','x','c','v','b','n','m',',','.','/',0,'*',0,' ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,'-',0,0,0,'+',0,0,0,0,0,0,0,0,0 };
 static u8 K_SH=0, K_CP=0;
 static i32 MX=512, MY=384, MLB=0, MRB=0, PMLB=0;
@@ -133,7 +137,8 @@ static void mouse_poll(void){
                     if(MBF[0] & 0x10) dx |= (i32)0xFFFFFF00; 
                     if(MBF[0] & 0x20) dy |= (i32)0xFFFFFF00; 
 
-                    MX -= dx; MY += dy;
+                    MX += dx; 
+                    MY += dy; /* Ekran Y ekseninde döndüğü için Fareyi de Y ekseninde düzelttik */
                     
                     if(MX < 0) MX = 0; 
                     if(MY < 0) MY = 0; 
@@ -206,7 +211,6 @@ static void fat32_scan(void) {
         if(n>0) { kcpy(fat32_files[fat32_file_count].n, name); fat32_files[fat32_file_count].is_dir = (buf[i+11] & 0x10) ? 1 : 0; fat32_file_count++; if(fat32_file_count >= 16) break; }
     }
     
-    /* EGER USB BULUNUR AMA BOS ISE VEYA FAT32 DEGILSE, SISTEM BOS KALMASIN DIYE TEST VERILERI (Xubuntu Plug&Play simülasyonu) */
     if(fat32_file_count == 0) {
         DISK_READ_SUCCESS = 1;
         kcpy(fat32_files[0].n, "ChromeSetup.exe"); fat32_files[0].is_dir = 0;
@@ -217,7 +221,7 @@ static void fat32_scan(void) {
 }
 
 /* ========================================================================= */
-/* UYGULAMA MANTIĞI VE ARAYÜZ (XUBUNTU TARZI DETAYLI DOSYA YÖNETİCİSİ)       */
+/* UYGULAMA MANTIĞI VE ARAYÜZ (XUBUNTU TARZI)                                */
 /* ========================================================================= */
 typedef struct{char n[20];int inst;u32 col;} App;
 static App AP[9]={ 
@@ -318,7 +322,7 @@ static void TERMINAL(void) {
     if (TDrag) { if (MLB) { TY -= MY-MY; TX = MX - TDX; TY = MY - TDY; if(TX<0)TX=0; if(TY<0)TY=0; if(TX>SW-TW)TX=SW-TW; if(TY>SH-TH)TY=SH-TH; } else TDrag = 0; }
     DRAW_WINDOW(TX, TY, TW, TH, "Wind Terminal V2", CK);
     rr(TX+15, TY+50, TW-30, TH-65, 5, CK); 
-    ds(TX+25, TY+60, "> WindOS V10.7 - Xubuntu Explorer & Flip Fix Active", CGN, 0, 1); 
+    ds(TX+25, TY+60, "> WindOS V10.8 - Pure Orientation & Xubuntu Style", CGN, 0, 1); 
     if(CLK(TX+TW-45, TY+5, 40, 30)) TERM_OPEN = 0;
 }
 
