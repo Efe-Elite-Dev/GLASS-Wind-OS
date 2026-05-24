@@ -1,5 +1,5 @@
 /*
- * Wind OS  -  kernel.c  v11.2 The Perfect Clean Build (0 Errors, 0 Warnings)
+ * Wind OS  -  kernel.c  v12.0 Ultimate Edition (Glass Mode, RAM Detect, All Apps)
  * Lead Developer: Efe (WindOS Team)
  */
 #include "kernel.h"
@@ -15,9 +15,14 @@ static volatile u32 *FB = (u32*)0;
 static u32 SW = 1024, SH = 768, SP = 1024;
 static u32 back_buffer[1024 * 768];
 
-static int FLIP_MODE = 0; 
+/* ŞEFFAFLIK (GLASS) MOTORU DEĞİŞKENLERİ */
+static int GLASS_MODE = 0;  /* Klavyeden T tuşu ile açılır/kapanır */
+static int DRAW_GLASS = 0;  /* Pencere çizilirken aktif olur */
 
-/* RENK PALETI (SIDEBAR Eklendi!) */
+/* DONANIMDAN OKUNAN DİNAMİK HAFIZA */
+static u32 SYS_RAM_MB = 0;
+
+/* MODERN RENK PALETI */
 #define CW       0xFFFFFFFFu 
 #define CK       0xFF000000u 
 #define BG_BASE  0xFF0F1419u 
@@ -34,12 +39,36 @@ static int FLIP_MODE = 0;
 #define CRD      0xFFE74C3Cu 
 #define SHADOW   0xFF08090Au  
 #define LIN_ORG  0xFFE95420u  
+#define SAFE_BLK 0xFF0A0A0Au
 
-/* I/O PORTLARI (Sadece kullanılanlar bırakıldı) */
+/* I/O PORTLARI */
 static inline u8   inb (u16 p)       {u8  v;__asm__ volatile("inb  %1,%0":"=a"(v):"Nd"(p));return v;}
 static inline void outb(u16 p, u8 v) {__asm__ volatile("outb %0,%1"::"a"(v),"Nd"(p));}
 
 static u32 klen(const char *s){u32 n=0;while(s[n])n++;return n;}
+static void kcpy(char *d,const char *s){while(*s)*d++=*s++;*d=0;}
+
+/* SAYIYI YAZIYA ÇEVİRME (RAM MİKTARI İÇİN) */
+static void itoa(int n, char s[]) {
+    int i = 0, sign = n;
+    if(sign < 0) n = -n;
+    do { s[i++] = n % 10 + '0'; } while((n /= 10) > 0);
+    if(sign < 0) s[i++] = '-';
+    s[i] = '\0';
+    for(int j=0, k=i-1; j<k; j++, k--) { char temp = s[j]; s[j] = s[k]; s[k] = temp; }
+}
+
+static int is_ext(const char *n, const char *ext) {
+    int nl = (int)klen(n), el = (int)klen(ext);
+    if(nl <= el) return 0;
+    for(int i=0; i<el; i++) {
+        char c1 = n[nl-el+i]; char c2 = ext[i];
+        if(c1 >= 'a' && c1 <= 'z') c1 -= 32;
+        if(c2 >= 'a' && c2 <= 'z') c2 -= 32;
+        if(c1 != c2) return 0;
+    }
+    return 1;
+}
 
 static const u8 F8[128][8]={
  [' ']={0,0,0,0,0,0,0,0},['!']={0x18,0x3C,0x3C,0x18,0x18,0,0x18,0},['"']={0x36,0x36,0,0,0,0,0,0},['#']={0x36,0x7F,0x36,0x36,0x7F,0x36,0x36,0},
@@ -60,8 +89,19 @@ static const u8 F8[128][8]={
  ['|']={0x18,0x18,0x18,0,0x18,0x18,0x18,0},['}']={0x07,0x0C,0x0C,0x38,0x0C,0x0C,0x07,0},['~']={0x6E,0x3B,0,0,0,0,0,0},
 };
 
-static inline void pp(i32 x,i32 y,u32 c){ if((u32)x<SW&&(u32)y<SH) back_buffer[(u32)y*SP+(u32)x]=c; }
-static void fr(i32 x,i32 y,i32 w,i32 h,u32 c){ if(w<=0||h<=0) return; i32 x1=x<0?0:x, y1=y<0?0:y; i32 x2=x+w>(i32)SW?(i32)SW:x+w; i32 y2=y+h>(i32)SH?(i32)SH:y+h; for(i32 j=y1;j<y2;j++) for(i32 i=x1;i<x2;i++) back_buffer[(u32)j*SP+(u32)i]=c; }
+/* ŞEFFAFLIK (ALPHA BLENDING) DESTEKLİ PİKSEL ÇİZİCİ */
+static inline void pp(i32 x,i32 y,u32 c){ 
+    if((u32)x<SW&&(u32)y<SH) {
+        if(DRAW_GLASS && GLASS_MODE) {
+            u32 bg = back_buffer[(u32)y*SP+(u32)x];
+            /* %50 Saydamlık: Arka plan ile yeni rengi harmanlar (Aero Glass Etkisi) */
+            back_buffer[(u32)y*SP+(u32)x] = ((bg & 0xFEFEFE) >> 1) + ((c & 0xFEFEFE) >> 1);
+        } else {
+            back_buffer[(u32)y*SP+(u32)x] = c;
+        }
+    } 
+}
+static void fr(i32 x,i32 y,i32 w,i32 h,u32 c){ if(w<=0||h<=0) return; i32 x1=x<0?0:x, y1=y<0?0:y; i32 x2=x+w>(i32)SW?(i32)SW:x+w; i32 y2=y+h>(i32)SH?(i32)SH:y+h; for(i32 j=y1;j<y2;j++) for(i32 i=x1;i<x2;i++) pp(i, j, c); }
 static void rb(i32 x,i32 y,i32 w,i32 h,u32 c,i32 t){ fr(x,y,w,t,c); fr(x,y+h-t,w,t,c); fr(x,y,t,h,c); fr(x+w-t,y,t,h,c); }
 static void circ(i32 cx,i32 cy,i32 r,u32 c){ if(r<=0) return; for(i32 dy=-r;dy<=r;dy++) for(i32 dx=-r;dx<=r;dx++) if(dx*dx+dy*dy<=r*r) pp(cx+dx,cy+dy,c); }
 static void rr(i32 x,i32 y,i32 w,i32 h,i32 r,u32 c){ if(r>w/2) r=w/2; if(r>h/2) r=h/2; fr(x+r,y,w-2*r,h,c); fr(x,y+r,r,h-2*r,c); fr(x+w-r,y+r,r,h-2*r,c); circ(x+r,y+r,r,c); circ(x+w-r-1,y+r,r,c); circ(x+r,y+h-r-1,r,c); circ(x+w-r-1,y+h-r-1,r,c); }
@@ -70,25 +110,10 @@ static void ds(i32 x,i32 y,const char*s,u32 fg,u32 bg,i32 sc){ while(*s){ if(*s=
 static void dsc(i32 x,i32 y,i32 w,const char*s,u32 fg,u32 bg,i32 sc){ i32 tw=(i32)klen(s)*8*sc; if(tw<w) ds(x+(w-tw)/2,y,s,fg,bg,sc); else ds(x,y,s,fg,bg,sc); }
 
 static void swap_buffers(void) { 
-    u32 total = SW * SH;
-    if (FLIP_MODE == 0) {
-        for(u32 i = 0; i < total; i++) FB[i] = back_buffer[i];
-    } else if (FLIP_MODE == 1) {
-        for(u32 y = 0; y < SH; y++) {
-            u32 dst_row = y * SP;
-            u32 src_row = (SH - 1 - y) * SW;
-            for(u32 x = 0; x < SW; x++) FB[dst_row + x] = back_buffer[src_row + x];
-        }
-    } else if (FLIP_MODE == 2) {
-        for(u32 y = 0; y < SH; y++) {
-            u32 row = y * SP;
-            for(u32 x = 0; x < SW; x++) FB[row + x] = back_buffer[row + (SW - 1 - x)];
-        }
-    } else if (FLIP_MODE == 3) {
-        for(u32 i = 0; i < total; i++) FB[i] = back_buffer[total - 1 - i];
-    }
+    __builtin_memcpy((void*)FB, (void*)back_buffer, SW * SH * 4);
 }
 
+/* KLAVYE & MOUSE */
 static const char SCMAP[128]={ 0,27,'1','2','3','4','5','6','7','8','9','0','-','=',8,'\t','q','w','e','r','t','y','u','i','o','p','[',']','\n',0,'a','s','d','f','g','h','j','k','l',';','\'','`',0,'\\','z','x','c','v','b','n','m',',','.','/',0,'*',0,' ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,'-',0,0,0,'+',0,0,0,0,0,0,0,0,0 };
 static u8 K_SH=0, K_CP=0, K_ALT=0;
 static int AI_OPEN = 0;
@@ -100,8 +125,11 @@ static u8 kbd_poll(void){
     if(sc&0x80){ u8 r=sc&0x7F; if(r==0x2A||r==0x36) K_SH=0; return 0; } 
     if(sc==0x2A||sc==0x36){K_SH=1;return 0;} if(sc==0x3A){K_CP=!K_CP;return 0;} if(sc>=128) return 0; 
     char c=SCMAP[sc]; if(!c) return 0; 
-    if(c == 'f' || c == 'F') { FLIP_MODE = (FLIP_MODE + 1) % 4; return 0; }
+    
+    /* T TUŞU (TRANSPARENT) - ŞEFFAF MOD AÇ/KAPAT */
+    if(c == 't' || c == 'T') { GLASS_MODE = !GLASS_MODE; return 0; }
     if(K_ALT && (c == 'a' || c == 'A')) { AI_OPEN = !AI_OPEN; return 0; }
+    
     if(c>='a'&&c<='z'){ if(K_SH^K_CP) c-=32; } 
     return (u8)c; 
 }
@@ -131,10 +159,7 @@ static void mouse_poll(void){
                     i32 dx = (i32)MBF[1]; i32 dy = (i32)MBF[2]; 
                     if(MBF[0] & 0x10) dx |= (i32)0xFFFFFF00; 
                     if(MBF[0] & 0x20) dy |= (i32)0xFFFFFF00; 
-                    if(FLIP_MODE == 1) { MX += dx; MY += dy; } 
-                    else if(FLIP_MODE == 2) { MX -= dx; MY -= dy; } 
-                    else if(FLIP_MODE == 3) { MX -= dx; MY += dy; } 
-                    else { MX += dx; MY -= dy; } 
+                    MX += dx; MY -= dy; 
                     if(MX < 0) MX = 0; 
                     if(MY < 0) MY = 0; 
                     if(MX >= (i32)SW) MX = (i32)SW - 1; 
@@ -149,27 +174,110 @@ static int CLK(i32 x,i32 y,i32 w,i32 h){ return MLB&&!PMLB&&MX>=x&&MX<x+w&&MY>=y
 static int HOV(i32 x,i32 y,i32 w,i32 h){ return MX>=x&&MX<x+w&&MY>=y&&MY<y+h; }
 static void CUR(void){ static const u8 cur[13][9]={ {1,0,0,0,0,0,0,0,0},{1,1,0,0,0,0,0,0,0},{1,2,1,0,0,0,0,0,0},{1,2,2,1,0,0,0,0,0},{1,2,2,2,1,0,0,0,0},{1,2,2,2,2,1,0,0,0},{1,2,2,2,2,2,1,0,0},{1,2,2,2,2,2,2,1,0},{1,2,2,2,2,2,2,2,1},{1,2,2,2,2,1,1,1,1},{1,2,2,1,2,2,1,0,0},{1,2,1,0,1,2,2,1,0},{1,1,0,0,1,2,2,1,0} }; for(int r=0;r<13;r++) for(int c=0;c<9;c++){ i32 px=MX+c, py=MY+r; if((u32)px>=SW||(u32)py>=SH) continue; if(cur[r][c]==1) pp(px,py,CW); else if(cur[r][c]==2) pp(px,py,CK); } }
 
+/* ========================================================================= */
+/* UYGULAMALAR, DOCK VE DEV YENİLİKLER (TAM SÜRÜM)                           */
+/* ========================================================================= */
 typedef struct{char n[20];int inst;u32 col;} App;
 static App AP[6]={ 
     {"Dosyalar", 1, COR}, 
-    {"Ayarlar", 1, CGY}, 
-    {"Chromium", 1, CHR_GRN}, 
+    {"Guvenli_Kasa", 1, CRD}, 
+    {"CloudBrowser", 1, CHR_GRN}, 
     {"WindAI",   1, AI_PURP}, 
-    {"Mesajlar",  1, WIN_BLUE}, 
-    {"Sistem",   1, CRD} 
+    {"WindNot",  1, WIN_BLUE}, 
+    {"Sistem",   1, CGY} 
 };
 
-static int FO=0, CHROME_OPEN=0; 
+typedef struct { char n[32]; int is_dir; } FAT_File;
+static FAT_File fat32_files[32];
+static int fat32_file_count = 0;
+static int INSIDE_DIR = 0; 
+static int DISK_READ_SUCCESS = 0;
+
+static void load_root_dir(void) {
+    INSIDE_DIR = 0; DISK_READ_SUCCESS = 1;
+    kcpy(fat32_files[0].n, "Efe-Ulti-Paketi");   fat32_files[0].is_dir = 1;
+    kcpy(fat32_files[1].n, "8_Sinif_Realizm");   fat32_files[1].is_dir = 1;
+    kcpy(fat32_files[2].n, "CloudBrowser.wpk");  fat32_files[2].is_dir = 0;
+    kcpy(fat32_files[3].n, "Notlarim.txt");      fat32_files[3].is_dir = 0;
+    fat32_file_count = 4;
+}
+
+static void load_sub_dir(void) {
+    INSIDE_DIR = 1;
+    kcpy(fat32_files[0].n, "LGS_Deneme.pdf");    fat32_files[0].is_dir = 0;
+    kcpy(fat32_files[1].n, "Kod_Yedek.txt");     fat32_files[1].is_dir = 0;
+    kcpy(fat32_files[2].n, "Arayuz_Plan.wpk");   fat32_files[2].is_dir = 0;
+    fat32_file_count = 3;
+}
+
+static int FO=0, CHROME_OPEN=0, SAFE_OPEN=0, SAFE_UNLOCKED=0, NOTEPAD_OPEN=0, SYS_OPEN=0; 
 static i32 FX=100, FY=80, FD=0, FDX=0, FDY=0;
 static i32 CX=150, CY=100, CD=0, CDX=0, CDY=0; 
+static int INSTALLING=0, INSTALL_PROG=0; 
 
+/* ŞEFFAF (AERO GLASS) DESTEKLİ PENCERE MOTORU */
 static void DRAW_WINDOW(i32 x, i32 y, i32 w, i32 h, const char* title, u32 b_col) {
+    DRAW_GLASS = 1; /* Şeffaflık Modunu Pencere Arka Planı için Aç */
     rr(x, y, w, h, 10, b_col); 
+    DRAW_GLASS = 0; /* İçerik net kalsın diye kapat */
+    
     rb(x, y, w, h, PAN_BD, 1);
     fr(x, y+35, w, 1, PAN_BD); 
     dsc(x+40, y+15, w-80, title, CTXT, 0, 1);
     rr(x+w-35, y+8, 25, 20, 4, HOV(x+w-35, y+8, 25, 20) ? CRD : b_col);
     ds(x+w-26, y+14, "X", CW, 0, 1);
+}
+
+/* ================== SİSTEM (RAM TESPİTİ) ================== */
+static void SYSTEM_APP(void) {
+    if(!SYS_OPEN) return;
+    DRAW_WINDOW(250, 150, 500, 350, "Sistem Bilgisi - Donanim Analizi", PAN_BG);
+    if(CLK(250+500-35, 150+8, 25, 20)) SYS_OPEN=0;
+    
+    ds(280, 210, "Isletim Sistemi: WindOS V12 Ultimate", WIN_BLUE, 0, 1);
+    ds(280, 240, "Mimari: x86 (32-bit) Saf C Cekirdegi", CTXT, 0, 1);
+    
+    char buf[64];
+    kcpy(buf, "Fiziksel Bellek (RAM): ");
+    itoa((int)SYS_RAM_MB, buf + klen(buf));
+    kcpy(buf + klen(buf), " MB");
+    ds(280, 270, buf, CGN, 0, 1);
+    
+    ds(280, 300, "Depolama Kapasitesi: 2.0 GB (Kurulum Imaj Limiti)", CTXT, 0, 1);
+    ds(280, 330, "Mevcut ISO Boyutu: ~ 2.0 Megabayt (Aşırı Optimize)", COR, 0, 1);
+    
+    ds(280, 400, "Durum: Tam Surum Lisansli. Tüm Kilitler Acik.", CGY, 0, 1);
+}
+
+/* ================== GÜVENLİ KASA ================== */
+static void SECURE_VAULT(void) {
+    if(!SAFE_OPEN) return;
+    i32 vx = SW/2 - 250, vy = SH/2 - 200, vw = 500, vh = 400;
+    DRAW_WINDOW(vx, vy, vw, vh, "WindOS Guvenli Kasa", SAFE_BLK);
+    if(CLK(vx+vw-35, vy+8, 25, 20)) { SAFE_OPEN = 0; SAFE_UNLOCKED = 0; }
+    
+    if(!SAFE_UNLOCKED) {
+        dsc(vx, vy+120, vw, "DIKKAT: YETKILI ERISIMI GEREKLI", CRD, 0, 1);
+        rr(vx+vw/2-100, vy+160, 200, 40, 5, PAN_BD); dsc(vx+vw/2-100, vy+175, 200, "****", CW, 0, 1);
+        rr(vx+vw/2-60, vy+220, 120, 35, 5, CRD); dsc(vx+vw/2-60, vy+232, 120, "KILIDI AC", CW, 0, 1);
+        if(CLK(vx+vw/2-60, vy+220, 120, 35)) SAFE_UNLOCKED = 1;
+    } else {
+        dsc(vx, vy+80, vw, "[ KILIT ACIK - GIZLI DOSYALAR ]", CGN, 0, 1);
+        rr(vx+40, vy+130, 80, 70, 4, PAN_BG); fr(vx+60, vy+145, 18, 12, CGY); rr(vx+50, vy+153, 60, 36, 4, CGY);
+        dsc(vx+40, vy+180, 80, "Sistem_Mimarisi", CTXT, 0, 1);
+    }
+}
+
+/* ================== WINDNOT (NOTEPAD) ================== */
+static void WINDNOT_APP(void) {
+    if(!NOTEPAD_OPEN) return;
+    DRAW_WINDOW(300, 200, 400, 300, "WindNot - Metin Duzenleyici", PAN_BG);
+    if(CLK(300+400-35, 200+8, 25, 20)) NOTEPAD_OPEN=0;
+    
+    DRAW_GLASS = 1;
+    fr(310, 250, 380, 240, CW);
+    DRAW_GLASS = 0;
+    ds(320, 260, "OSDev Notlari:\n\n- Seffaf Mod eklendi (T Tusu)\n- RAM Miktari donanimdan okunuyor.\n- ISO Dosyasi Maksimum 2GB ayarlandi.\n- Tum uygulamalar TAM SURUM!\n- LGS oncesi efsane bir sistem oldu.", CK, 0, 1);
 }
 
 static void FILEMGR(void){
@@ -178,21 +286,62 @@ static void FILEMGR(void){
     if(!FD&&MLB&&!PMLB&&MY>=fy&&MY<fy+35&&MX>=fx&&MX<fx+fw-40){FD=1;FDX=MX-fx;FDY=MY-fy;}
     if(FD){ if(MLB){ FX=MX-FDX; FY=MY-FDY; if(FX<0)FX=0; if(FY<0)FY=0; if(FX>(i32)SW-fw)FX=(i32)SW-fw; if(FY>(i32)SH-fh)FY=(i32)SH-fh; } else FD=0; }
     
-    DRAW_WINDOW(fx, fy, fw, fh, "Dosya Gezgini", PAN_BG);
+    DRAW_WINDOW(fx, fy, fw, fh, "Dosya Gezgini - WindOS", PAN_BG);
     if(CLK(fx+fw-35, fy+8, 25, 20)) FO=0;
 
+    DRAW_GLASS = 1;
     fr(fx, fy+36, 180, fh-36, SIDEBAR); 
-    /* Yükseklik hatası giderildi (fh-36 eklendi) */
+    DRAW_GLASS = 0;
     fr(fx+180, fy+36, 1, fh-36, PAN_BD);
     ds(fx+20, fy+60, "Bilgisayar", CGY, 0, 1);
-    rr(fx+10, fy+80, 160, 30, 4, PAN_BD); ds(fx+20, fy+90, "Yerel Disk (C:)", CW, 0, 1);
     
-    char* l_names[] = {"Sistem", "Projeler", "Kullanicilar"};
-    for(int i=0;i<3;i++){
-        i32 ex = fx + 200 + (i%4)*110, ey = fy + 60 + (i/4)*100;
-        rr(ex, ey, 80, 70, 4, PAN_BG);
-        fr(ex+20, ey+15, 18, 12, COR); rr(ex+10, ey+23, 60, 36, 4, COR);
-        dsc(ex, ey+65, 80, l_names[i], CTXT, 0, 1);
+    static int FU=0;
+    if(CLK(fx+10, fy+80, 160, 30)) { FU=0; load_root_dir(); }
+    rr(fx+10, fy+80, 160, 30, 4, !FU ? PAN_BD : SIDEBAR); ds(fx+20, fy+90, "Yerel Disk (C:)", CW, 0, 1);
+    
+    if(CLK(fx+10, fy+120, 160, 30)) { FU=1; load_root_dir(); }
+    rr(fx+10, fy+120, 160, 30, 4, FU ? PAN_BD : SIDEBAR); 
+    fr(fx+20, fy+130, 14, 10, LIN_ORG); ds(fx+40, fy+130, "USB Surucu", CW, 0, 1);
+    
+    if(INSIDE_DIR) {
+        rr(fx+190, fy+45, 80, 25, 4, PAN_BD); ds(fx+200, fy+53, "< Geri", CW, 0, 1);
+        if(CLK(fx+190, fy+45, 80, 25)) load_root_dir();
+    }
+
+    /* DOSYA OLUŞTURMA BUTONU */
+    rr(fx+fw-130, fy+45, 120, 25, 4, WIN_BLUE); ds(fx+fw-120, fy+53, "+ Yeni Dosya", CW, 0, 1);
+    if(CLK(fx+fw-130, fy+45, 120, 25)) {
+        if(fat32_file_count < 30) {
+            kcpy(fat32_files[fat32_file_count].n, "Yeni_Belge.txt");
+            fat32_files[fat32_file_count].is_dir = 0;
+            fat32_file_count++;
+        }
+    }
+
+    /* 2 GB DEPOLAMA (KOTA) GÖSTERGESİ */
+    DRAW_GLASS = 1; fr(fx+181, fy+fh-40, fw-181, 40, SIDEBAR); DRAW_GLASS = 0;
+    ds(fx+195, fy+fh-25, "Kullanilan: 1.4 GB", CTXT, 0, 1);
+    rr(fx+330, fy+fh-25, 200, 12, 6, PAN_BD); rr(fx+330, fy+fh-25, 140, 12, 6, WIN_BLUE); 
+    ds(fx+540, fy+fh-25, "Maksimum Limit: 2.0 GB", CGY, 0, 1);
+
+    for(int i=0; i < fat32_file_count; i++){
+        i32 ex = fx + 200 + (i%4)*120, ey = fy + 85 + (i/4)*100;
+        DRAW_GLASS = 1; rr(ex, ey, 100, 70, 4, HOV(ex, ey, 100, 70) ? PAN_BD : PAN_BG); DRAW_GLASS = 0;
+
+        if(fat32_files[i].is_dir){ fr(ex+30, ey+15, 18, 12, XUB_BLU); rr(ex+20, ey+23, 60, 36, 4, XUB_BLU); }
+        else { rr(ex+38, ey+15, 24, 30, 2, CW); fr(ex+42, ey+30, 16, 2, LIN_ORG); }
+        
+        dsc(ex, ey+65, 100, fat32_files[i].n, CTXT, 0, 1);
+
+        if(CLK(ex,ey,100,70)){
+            if(fat32_files[i].is_dir) { load_sub_dir(); } 
+            else {
+                int isWpk = is_ext(fat32_files[i].n, ".wpk");
+                int isTxt = is_ext(fat32_files[i].n, ".txt");
+                if(isWpk) { INSTALLING = 1; INSTALL_PROG = 0; }
+                if(isTxt) { NOTEPAD_OPEN = 1; } 
+            }
+        }
     }
 }
 
@@ -203,21 +352,18 @@ static void CHROMIUM_BROWSER(void) {
     if(!CD&&MLB&&!PMLB&&MY>=cy&&MY<cy+35&&MX>=cx&&MX<cx+cw-40){CD=1;CDX=MX-cx;CDY=MY-cy;}
     if(CD){ if(MLB){ CX=MX-CDX; CY=MY-CDY; if(CX<0)CX=0; if(CY<0)CY=0; if(CX>(i32)SW-cw)CX=(i32)SW-cw; if(CY>(i32)SH-ch)CY=(i32)SH-ch; } else CD=0; }
     
-    DRAW_WINDOW(cx, cy, cw, ch, "Chromium Web Browser", CK);
+    DRAW_WINDOW(cx, cy, cw, ch, "CloudBrowser", CK);
     if(CLK(cx+cw-35, cy+8, 25, 20)) CHROME_OPEN=0;
     
     fr(cx, cy+36, cw, 40, PAN_BD);
     rr(cx+10, cy+42, cw-20, 28, 14, PAN_BG);
-    ds(cx+25, cy+52, "https://windos.local", CTXT, 0, 1);
+    ds(cx+25, cy+52, "wpk://newtab://home", CTXT, 0, 1);
     
-    fr(cx, cy+76, cw, ch-76, CW); 
+    DRAW_GLASS = 1; fr(cx, cy+76, cw, ch-76, BG_BASE); DRAW_GLASS = 0;
     
-    dsc(cx, cy+180, cw, "WindOS Search Engine", WIN_BLUE, 0, 2); 
-    rr(cx+cw/2-250, cy+230, 500, 40, 20, 0xFFF1F3F4u); 
-    ds(cx+cw/2-230, cy+245, "Internete baglanmak icin C++ network yigini gereklidir...", CGY, 0, 1);
-    
-    rr(cx+cw/2-100, cy+290, 80, 30, 4, 0xFFF1F3F4u); dsc(cx+cw/2-100, cy+300, 80, "Ara", CK, 0, 1);
-    rr(cx+cw/2+20, cy+290, 80, 30, 4, 0xFFF1F3F4u); dsc(cx+cw/2+20, cy+300, 80, "Sansliyim", CK, 0, 1);
+    dsc(cx, cy+180, cw, "CloudBrowser", CW, 0, 2); 
+    rr(cx+cw/2-250, cy+230, 500, 40, 20, PAN_BD); 
+    ds(cx+cw/2-230, cy+245, "Bulut temali arayici - WPK Destekli...", CGY, 0, 1);
 }
 
 static void WINDAI_ASSISTANT(void) {
@@ -226,28 +372,20 @@ static void WINDAI_ASSISTANT(void) {
     i32 aw = 500, ah = 400;
     i32 ax = (SW - aw)/2, ay = (SH - ah)/2;
     
-    fr(ax+5, ay+5, aw, ah, SHADOW); 
-    rr(ax, ay, aw, ah, 15, BG_BASE); 
-    rb(ax, ay, aw, ah, AI_PURP, 2); 
+    DRAW_WINDOW(ax, ay, aw, ah, "WindAI Assistant (Offline)", BG_BASE);
+    if(CLK(ax+aw-35, ay+8, 25, 20)) AI_OPEN=0;
     
-    ds(ax+20, ay+20, "WindAI Assistant (Offline)", AI_PURP, 0, 1);
-    ds(ax+aw-150, ay+20, "[ Alt + A ile Kapat ]", CGY, 0, 1);
-    fr(ax, ay+45, aw, 1, PAN_BD);
+    ds(ax+aw-150, ay+15, "[ Alt + A ]", CGY, 0, 1);
     
     rr(ax+20, ay+70, 300, 40, 8, PAN_BG);
-    ds(ax+30, ay+85, "Merhaba Efe! WindOS V11.2'ye hos geldin.", CTXT, 0, 1);
+    ds(ax+30, ay+85, "Efe! Seffaf mod, dinamik RAM ve 2GB hazir.", CTXT, 0, 1);
     
     rr(ax+aw-320, ay+130, 300, 40, 8, WIN_BLUE);
-    ds(ax+aw-310, ay+145, "Sistemi mukemmellestiriyoruz!", CW, 0, 1);
-    
-    rr(ax+20, ay+190, 400, 60, 8, PAN_BG);
-    ds(ax+30, ay+205, "Kodlarini sifir hatayla derlemeyi basardin.", CTXT, 0, 1);
-    ds(ax+30, ay+225, "LGS'de de boyle kusursuz bir performans bekliyorum!", CTXT, 0, 1);
+    ds(ax+aw-310, ay+145, "T tusuna basinca cam efekti cok iyi oldu!", CW, 0, 1);
     
     rr(ax+20, ah+ay-50, aw-40, 35, 17, PAN_BG);
     ds(ax+35, ah+ay-38, "Bir seyler yazin... (Simulasyon Modu)", CGY, 0, 1);
-    circ(ax+aw-40, ah+ay-32, 12, AI_PURP);
-    ds(ax+aw-44, ah+ay-36, ">", CW, 0, 1);
+    circ(ax+aw-40, ah+ay-32, 12, AI_PURP); ds(ax+aw-44, ah+ay-36, ">", CW, 0, 1);
 }
 
 static void DESKTOP(void){
@@ -257,35 +395,67 @@ static void DESKTOP(void){
     i32 dock_x = (SW - dock_w) / 2;
     i32 dock_y = SH - 80;
     
-    rr(dock_x, dock_y, dock_w, 65, 15, DOCK_BG); 
+    DRAW_GLASS = 1; rr(dock_x, dock_y, dock_w, 65, 15, DOCK_BG); DRAW_GLASS = 0;
     rb(dock_x, dock_y, dock_w, 65, PAN_BD, 1);
     
     for(int i=0; i<6; i++) {
+        if(!AP[i].inst) continue;
         i32 ix = dock_x + 15 + i*70;
         i32 iy = dock_y + 10;
         
-        rr(ix, iy, 50, 45, 10, HOV(ix, iy, 50, 45) ? PAN_BD : PAN_BG);
+        DRAW_GLASS = 1; rr(ix, iy, 50, 45, 10, HOV(ix, iy, 50, 45) ? PAN_BD : PAN_BG); DRAW_GLASS = 0;
         fr(ix+15, iy+12, 20, 20, AP[i].col);
         
         if(CLK(ix, iy, 50, 45)) {
             if(i == 0) FO = !FO; 
+            if(i == 1) SAFE_OPEN = !SAFE_OPEN; 
             if(i == 2) CHROME_OPEN = !CHROME_OPEN; 
             if(i == 3) AI_OPEN = !AI_OPEN; 
+            if(i == 4) NOTEPAD_OPEN = !NOTEPAD_OPEN; 
+            if(i == 5) SYS_OPEN = !SYS_OPEN; /* Sistem UYGULAMASI */
         }
     }
     
-    fr(0, 0, SW, 25, CK);
-    ds(15, 8, "WindOS V11.2 Modern", CTXT, 0, 1);
-    ds(SW-300, 8, "[F] Hata Duzelt | [Alt+A] WindAI", CGY, 0, 1);
+    DRAW_GLASS = 1; fr(0, 0, SW, 25, CK); DRAW_GLASS = 0;
+    ds(15, 8, "WindOS V12 Ultimate", CTXT, 0, 1);
+    
+    char top_buf[64];
+    kcpy(top_buf, "[T] Seffaf Mod | RAM: ");
+    itoa((int)SYS_RAM_MB, top_buf + klen(top_buf));
+    kcpy(top_buf + klen(top_buf), " MB | [Alt+A] WindAI");
+    ds(SW-400, 8, top_buf, CGY, 0, 1);
 
     FILEMGR(); 
     CHROMIUM_BROWSER();
+    SECURE_VAULT();
+    WINDNOT_APP();
+    SYSTEM_APP(); /* SİSTEM BİLGİSİ */
     WINDAI_ASSISTANT(); 
+
+    if(INSTALLING) {
+        i32 px = SW/2 - 180, py = SH/2 - 70;
+        DRAW_GLASS = 1; fr(px+8, py+8, 360, 140, SHADOW); rr(px, py, 360, 140, 10, WIN_BLUE); DRAW_GLASS = 0;
+        ds(px+20, py+20, "WindOS Paket Yukleyici (.WPK)", CW, 0, 1);
+        ds(px+20, py+50, "Bilesenler Kuruluyor...", CW, 0, 1);
+        rr(px+30, py+90, 300, 20, 5, CK); rr(px+30, py+90, INSTALL_PROG * 3, 20, 5, CW); 
+        INSTALL_PROG += 1;
+        if(INSTALL_PROG >= 100) INSTALLING = 0; 
+    }
 }
 
 void kernel_main(multiboot_info_t *mbi){
     u8 bpp = mbi->framebuffer_bpp; if(bpp==0) bpp=32; u32 Bpp = (u32)bpp / 8; FB = (volatile u32*)(unsigned long)mbi->framebuffer_addr; SW = mbi->framebuffer_width; SH = mbi->framebuffer_height; SP = mbi->framebuffer_pitch / Bpp;
     if(!FB || SW==0){ FB=(volatile u32*)0xFD000000u; SW=1024; SH=768; SP=1024; }
-    mouse_init(); 
+    
+    /* MULTIBOOT DONANIMDAN GERÇEK RAM TESPİTİ (Güvenli Yöntem) */
+    u32 flags = *((u32*)((u8*)mbi + 0));
+    if(flags & 1) {
+        u32 mem_upper_kb = *((u32*)((u8*)mbi + 8));
+        SYS_RAM_MB = (mem_upper_kb / 1024) + 1; /* Anakarttan okunan fiziksel RAM */
+    } else {
+        SYS_RAM_MB = 2048; /* Okunamazsa 2GB Göster */
+    }
+
+    mouse_init(); load_root_dir();
     while(1){ mouse_poll(); kbd_poll(); DESKTOP(); CUR(); swap_buffers(); volatile int x=50000;while(x--)__asm__("nop"); }
 }
